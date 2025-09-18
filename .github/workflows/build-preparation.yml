@@ -7,6 +7,10 @@ on:
         description: 'App Version (e.g., 3.37.2)'
         required: true
         type: string
+      build_number:
+        description: 'Build Number (e.g., 303700200)'
+        required: true
+        type: string
       build_platform:
         description: 'Select build platform'
         required: true
@@ -25,14 +29,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Validate and Generate Build Number
-        id: version-validation
+      - name: Validate Inputs
+        id: validation
         run: |
           VERSION="${{ inputs.app_version }}"
+          BUILD_NUMBER="${{ inputs.build_number }}"
           PLATFORM="${{ inputs.build_platform }}"
           
-          echo "🔍 Validating version: $VERSION"
-          echo "🏗️ Build platform: $PLATFORM"
+          echo "🔍 Validating inputs..."
+          echo "📋 Version: $VERSION"
+          echo "🔢 Build Number: $BUILD_NUMBER"
+          echo "🏗️ Platform: $PLATFORM"
           
           # Validate version format (x.y.z where x, y, z are numbers)
           if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -40,31 +47,18 @@ jobs:
             exit 1
           fi
           
-          # Extract version components
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          
-          # Validate ranges
-          if (( MAJOR > 99 || MINOR > 99 || PATCH > 999 )); then
-            echo "❌ ERROR: Version components out of range. Max: 99.99.999"
+          # Validate build number is numeric
+          if [[ ! $BUILD_NUMBER =~ ^[0-9]+$ ]]; then
+            echo "❌ ERROR: Build number must be numeric"
             exit 1
           fi
           
-          # Generate build number using the specified logic
-          # Format: MMmmmppp (2 digits major, 2 digits minor, 3 digits patch)
-          BUILD_NUMBER=$(printf "%02d%02d%03d" $MAJOR $MINOR $PATCH)
-          
-          echo "✅ Version validation successful"
-          echo "📋 Version: $VERSION"
-          echo "🔢 Generated Build Number: $BUILD_NUMBER"
-          echo "🏗️ Platform: $PLATFORM"
+          echo "✅ Input validation successful"
           
           # Set outputs for next steps
           echo "app_version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
-          echo "major_version=$MAJOR" >> $GITHUB_OUTPUT
-          echo "minor_version=$MINOR" >> $GITHUB_OUTPUT
-          echo "patch_version=$PATCH" >> $GITHUB_OUTPUT
       
       - name: Summary
         run: |
@@ -72,14 +66,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **App Version** | \`${{ steps.version-validation.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Build Number** | \`${{ steps.version-validation.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Platform** | \`${{ steps.version-validation.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Major.Minor.Patch** | \`${{ steps.version-validation.outputs.major_version }}.${{ steps.version-validation.outputs.minor_version }}.${{ steps.version-validation.outputs.patch_version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔢 Build Number Generation Logic" >> $GITHUB_STEP_SUMMARY
-          echo "- Format: \`MMmmmppp\` (2 digits major, 2 digits minor, 3 digits patch)" >> $GITHUB_STEP_SUMMARY
-          echo "- Example: \`3.37.2\` → \`03037002\` → \`3037002\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Example: \`3.4.0\` → \`03004000\` → \`3004000\`" >> $GITHUB_STEP_SUMMARY
+          echo "| **App Version** | \`${{ steps.validation.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Number** | \`${{ steps.validation.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platform** | \`${{ steps.validation.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Ready for next build steps!**" >> $GITHUB_STEP_SUMMARY
