@@ -1,0 +1,15 @@
+enum LocalDBOtherActions {
+  getUsersWithTagsDivision,
+  getDivisionsWithUsers,
+  getTagsWithUsers,
+  getReferrals,
+  getTrades,
+  getCompanies,
+  getCountries,
+  getStates,
+  getFlags,
+  getWorkflowStages,
+  get1UserRecord,
+  deleteDB,
+  migrateOldDB,
+}

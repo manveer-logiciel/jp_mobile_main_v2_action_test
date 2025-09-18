@@ -1,0 +1,19 @@
+enum NotificationType {
+  task,
+  appointment,
+  job,
+  documentExpired,
+  jobSchedule,
+  jobPriceRequest,
+  workCrewNote,
+  message,
+  jobFollowUp,
+  jobNote,
+  customer,
+  materialList,
+  worksheet,
+  announcement,
+  notification,
+  leapPay,
+  userRegistrationInvite
+}

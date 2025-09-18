@@ -1,0 +1,4 @@
+enum DatePickerType {
+  start,
+  end
+}

@@ -1,0 +1,5 @@
+
+enum RecurringType {
+  appointment,
+  salesAutomation
+}

@@ -1,0 +1,20 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    avoid_print: warning
+    inference_failure_on_function_return_type: ignore
+    inference_failure_on_function_invocation: ignore
+    inference_failure_on_untyped_parameter: error
+    use_key_in_widget_constructors: error
+    unnecessary_import: error
+  language:
+    strict-inference: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    lines_longer_than_80_chars: false  # Allows long lines
+
+# Additional information about this file can be found at
+# https://dart.dev/guides/language/analysis-options

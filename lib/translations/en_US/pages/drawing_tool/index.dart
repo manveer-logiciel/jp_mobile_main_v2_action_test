@@ -1,0 +1,30 @@
+class EnUsDrawingToolTranslations {
+  static Map<String, String> strings = {
+    'drawing_tool' : 'Drawing Tool',
+    'line' : 'Line',
+    'circle' : 'Circle',
+    'rectangle' : 'Rectangle',
+    'arrow' : 'Arrow',
+    'double_arrow' : 'D. Arrow',
+    'nothing_to_undo' : 'Nothing to undo',
+    'nothing_to_redo' : 'Nothing to redo',
+    'pick_color' : 'Pick Color',
+    'pt' : 'pt',
+    'font_size' : 'Font Size',
+    'stroke' : 'Stroke',
+    'save_as' : 'Save As',
+    'saving_image' : 'Saving image...',
+    'delete' : 'Delete',
+    'color' : 'Color',
+    'bold' : 'Bold',
+    'italic' : 'Italic',
+    'underline' : 'Underline',
+    'left' : 'Left',
+    'center' : 'Center',
+    'right' : 'Right',
+    'justify' : 'Justify',
+    'size' : 'Size',
+    'you_are_about_to_reset_all_your_changes' : 'You are about to reset all your changes. Press reset to proceed.',
+    'all_your_saved_changes_will_be_lost' : 'All of your changes will be lost. Press confirm to proceed.'
+  };
+}

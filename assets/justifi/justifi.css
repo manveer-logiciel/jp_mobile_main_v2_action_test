@@ -1,0 +1,21 @@
+:root {
+  --jfi-form-control-color: #111;
+  --jfi-form-control-padding: 12px 12px 12px 12px;
+  --jfi-layout-form-control-spacing-x: 16px;
+  --jfi-layout-form-control-spacing-y: 16px;
+  --jfi-layout-font-family: 'Roboto',sans-serif;
+  --jfi-form-control-border-width: 1px;
+  --jfi-form-control-border-style: solid;
+  --jfi-form-control-border-color: #E0E0E0;
+  --jfi-form-control-border-radius: 8px;
+  --jfi-form-control-border-color-focus: #418BCA;
+  --jfi-form-control-font-size: 14px;
+  --jfi-form-label-font-size: 14px;
+  --jfi-form-label-color: #444;
+  --jfi-form-label-margin: 0 0 5px 0;
+  --jfi-form-label-font-weight: 400;
+  --jfi-form-label-font-family: 'Roboto',sans-serif;
+  --jfi-error-message-color: rgb(220,68,55);
+  --jfi-error-message-margin: 5px 0 0 0;
+  --jfi-error-message-font-size: 12px;
+}

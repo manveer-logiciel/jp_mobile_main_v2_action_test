@@ -1,0 +1,4 @@
+enum EagleViewFormType {
+  createForm,
+  editForm
+}

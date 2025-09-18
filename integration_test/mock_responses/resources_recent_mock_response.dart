@@ -1,0 +1,42 @@
+class ResourcesRecentMockResponse {
+
+  static const List<Map<String,dynamic>> okResponse = [
+    {
+      "id":159915,
+      "company_id":15395,
+      "parent_id":149609,
+      "position":0,
+      "real_depth":0,
+      "name":"dummy.pdf",
+      "size":13264,
+      "thumb_exists":0,
+      "path": "goody_1670417322/jobs/2212-19644-01/167584980163e37049937f3_dummy.pdf",
+      "is_dir":0,
+      "mime_type":"application/pdf",
+      "locked":0,
+      "created_by":1229,
+      "created_at":"2023-01-17 04:40:25",
+      "updated_at":"2023-01-17 04:40:25",
+      "deleted_by":null,
+      "deleted_at":null,
+      "share_on_hop":0,
+      "admin_only":0,
+      "user_id":null,
+      "reference_id":null,
+      "last_moved_at":"2023-01-17 04:40:25",
+      "type":null,
+      "thumb": null,
+      "share_on_hop_at":null,
+      "multi_size_image":0,
+      "origin":"job_progress",
+      "external_full_url":null,
+      "children":<Null>[],
+      "is_expired":0,
+      "expiration_id":null,
+      "expiration_date":null,
+      "multi_size_images":<Null>[],
+      "original_file_path": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "relative_path": "resources/goody_1670417322/jobs/2212-19644-01/167584980163e37049937f3_dummy.pdf",
+      "document_expire":null
+    }];
+}

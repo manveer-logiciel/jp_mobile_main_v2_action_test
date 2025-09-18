@@ -1,0 +1,4 @@
+enum ParentFormType{
+  inherited,
+  individual
+}

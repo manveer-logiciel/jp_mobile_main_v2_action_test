@@ -1,0 +1,16 @@
+enum FilterDialogTextType {
+  stages,
+  divisions,
+  users,
+  trades,
+  flags,
+  job,
+  jobName,
+  address,
+  states,
+  status,
+  zip,
+  customerName,
+  dateType,
+  duration,
+}

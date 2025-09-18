@@ -1,0 +1,4 @@
+enum DeleteDialogCallType {
+  customerListing,
+  jobListing,
+}

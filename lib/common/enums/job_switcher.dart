@@ -1,0 +1,4 @@
+enum JobSwitcherType {
+  job,
+  project
+}

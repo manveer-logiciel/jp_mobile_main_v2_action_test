@@ -1,0 +1,4 @@
+enum MapType {
+  appleMap,
+  googleMap,
+}

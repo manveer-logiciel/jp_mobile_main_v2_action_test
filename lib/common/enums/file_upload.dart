@@ -1,0 +1,4 @@
+enum UploadFileFrom {
+  popup,
+  scanner
+}

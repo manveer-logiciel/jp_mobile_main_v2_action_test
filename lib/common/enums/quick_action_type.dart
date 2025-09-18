@@ -1,0 +1,4 @@
+enum QuickActionType {
+  jobSearch,
+  jobListing
+}

@@ -1,0 +1,5 @@
+
+enum JobFormType {
+  add,
+  edit
+}

@@ -1,0 +1,4 @@
+enum HoverFormType {
+  add,
+  linkWithJob
+}

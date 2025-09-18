@@ -1,0 +1,30 @@
+class EsUsAutomationTranslations {
+  static Map<String, String> strings = {
+    /// --------- NEW TRANSLATION ------------
+    'no_automation_found' : 'No se encontró automatización',
+    'moved_to' : 'Movido a',
+    'triggered_by' : 'Activado por',
+    'email_automations' : 'Automatizaciones de correo electrónico',
+    'task_automations' : 'Automatizaciones de tareas',
+    'reverted' : 'Revertido',
+    'undo' : 'Deshacer',                                                                                                                    
+    'back_to' : 'volver a',
+    'automation_reverted' : 'Automatización revertida',
+    'skip_all' : 'Omitir todo',
+    'send_all' : 'Enviar todo',
+    'automation_alerts' : 'Alertas de automatización',                     
+    'automation_confirmation' : '¿Estás seguro de que deseas deshacer la automatización del flujo de trabajo? Esta acción revertirá el trabajo',
+    'incomplete_tasks' : 'Tareas incompletas', 
+    'stage_unlock_description' : 'Todas las tareas están completas y la etapa ahora está desbloqueada',
+    'stage_unlock' : 'Etapa desbloqueada',
+    'blocked' : 'Bloqueado',
+    'automation_to' : 'Automatización a',
+    'was' : 'fue',
+    'due_to_incomplete_tasks' : 'debido a tareas incompletas',
+    'automation_skipped' : 'Automatización omitida',
+    'please_confirm_that_you_want_to_skip_all_automation_tasks_and_emails_for_this_stage' : 'Por favor confirma que deseas omitir todas las tareas de automatización y correos electrónicos para esta etapa',
+    'please_click_on_initiate_stage_change_to_unblock_the_automation' : 'Haz clic en Iniciar cambio de etapa para desbloquear la automatización',
+    'initiate_stage_change' : 'Iniciar cambio de etapa',
+    'unblock_automation_confirmation' : '¿Te gustaría continuar con la automatización de progresión de etapa?',
+  };
+}

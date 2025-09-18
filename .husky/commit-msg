@@ -1,0 +1,24 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Read the commit message from the file provided as the first argument
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Define the regex pattern for standard commit messages
+REGEX="^[a-z]+: \([A-Z]+-[0-9]+\) .+$"
+
+# Check if the commit is a merge commit
+if grep -iq "^merge" "$COMMIT_MSG_FILE"; then
+  exit 0
+fi
+
+# Check if the commit message matches the regex pattern
+if ! echo "$COMMIT_MSG" | grep -Eq "$REGEX"; then
+  echo "Invalid commit message format."
+  echo "Commit message should be in the format: <type>: (<JIRA-ticket>) <description>"
+  exit 1
+fi
+
+# Exit with success status if the pattern matches
+exit 0
