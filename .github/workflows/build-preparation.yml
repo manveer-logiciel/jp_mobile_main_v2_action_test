@@ -60,6 +60,38 @@ jobs:
           echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
       
+      - name: Update Version Files
+        run: |
+          VERSION="${{ steps.validation.outputs.app_version }}"
+          BUILD_NUMBER="${{ steps.validation.outputs.build_number }}"
+          
+          echo "🔄 Updating version files..."
+          
+          # Update pubspec.yaml
+          echo "📝 Updating pubspec.yaml: $VERSION+$BUILD_NUMBER"
+          sed -i.bak "s/^version: .*/version: $VERSION+$BUILD_NUMBER/" pubspec.yaml
+          
+          # Update global.dart
+          echo "📝 Updating lib/common/libraries/global.dart: $VERSION"
+          sed -i.bak "s/String appVersion = '[^']*';/String appVersion = '$VERSION';/" lib/common/libraries/global.dart
+          
+          # Update iOS marketing version
+          echo "📝 Updating iOS marketing version: $VERSION"
+          sed -i.bak "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $VERSION/" ios/Runner.xcodeproj/project.pbxproj
+          
+          # Clean up backup files
+          rm -f pubspec.yaml.bak lib/common/libraries/global.dart.bak ios/Runner.xcodeproj/project.pbxproj.bak
+          
+          echo "✅ Version files updated successfully"
+      
+      - name: Commit Version Updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add pubspec.yaml lib/common/libraries/global.dart ios/Runner.xcodeproj/project.pbxproj
+          git commit -m "Update version to ${{ steps.validation.outputs.app_version }} (build ${{ steps.validation.outputs.build_number }})" || echo "No changes to commit"
+          git push
+      
       - name: Summary
         run: |
           echo "## 🎯 Build Preparation Summary" >> $GITHUB_STEP_SUMMARY
@@ -69,5 +101,10 @@ jobs:
           echo "| **App Version** | \`${{ steps.validation.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Build Number** | \`${{ steps.validation.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Platform** | \`${{ steps.validation.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Updated Files" >> $GITHUB_STEP_SUMMARY
+          echo "- \`pubspec.yaml\` - version: ${{ steps.validation.outputs.app_version }}+${{ steps.validation.outputs.build_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- \`lib/common/libraries/global.dart\` - appVersion: ${{ steps.validation.outputs.app_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ios/Runner.xcodeproj/project.pbxproj\` - MARKETING_VERSION: ${{ steps.validation.outputs.app_version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Ready for next build steps!**" >> $GITHUB_STEP_SUMMARY
