@@ -263,10 +263,10 @@ jobs:
       
       - name: Decode and create keystore file
         run: |
-          echo "🔐 Creating keystore from base64 secret..."
+          echo "🔐 Creating keystore from base64 variable..."
           
           # Decode base64 keystore and save it
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
+          echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
           
           # Verify the keystore file was created and has content
           if [ ! -f android/keystore.jks ]; then
@@ -290,9 +290,9 @@ jobs:
       - name: Create key.properties
         run: |
           echo "🔑 Creating key.properties..."
-          echo "storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}" > android/key.properties
-          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
+          echo "storePassword=${{ vars.ANDROID_STORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ vars.ANDROID_KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ vars.ANDROID_KEY_ALIAS }}" >> android/key.properties
           echo "storeFile=../keystore.jks" >> android/key.properties
           
           # Verify key.properties was created
@@ -310,7 +310,17 @@ jobs:
           # Try to list the keystore contents to verify password and alias
           if command -v keytool >/dev/null 2>&1; then
             echo "Testing keystore access with provided credentials..."
-            keytool -list -v -keystore android/keystore.jks -storepass "${{ secrets.ANDROID_STORE_PASSWORD }}" -alias "${{ secrets.ANDROID_KEY_ALIAS }}" || {
+            
+            # First, try to list all aliases without specifying one (this only needs store password)
+            echo "📋 Listing all aliases in keystore..."
+            keytool -list -keystore android/keystore.jks -storepass "${{ vars.ANDROID_STORE_PASSWORD }}" || {
+              echo "❌ ERROR: Cannot access keystore with store password"
+              echo "Store password is definitely incorrect."
+              exit 1
+            }
+            
+            echo "✅ Store password is correct! Now testing specific alias..."
+            keytool -list -v -keystore android/keystore.jks -storepass "${{ vars.ANDROID_STORE_PASSWORD }}" -alias "${{ vars.ANDROID_KEY_ALIAS }}" || {
               echo "❌ ERROR: Cannot access keystore with provided credentials"
               echo "This could indicate:"
               echo "  1. Incorrect ANDROID_STORE_PASSWORD"
