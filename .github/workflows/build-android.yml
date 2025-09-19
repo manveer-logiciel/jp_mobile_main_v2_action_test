@@ -9,6 +9,9 @@ on:
       build_number:
         required: true
         type: string
+    secrets:
+      PRIVATE_REPO_TOKEN:
+        required: false
 
 jobs:
   build-android:
@@ -21,7 +24,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
       
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -37,7 +40,8 @@ jobs:
       
       - name: Configure Git for private repos
         run: |
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
       - name: Create key.properties
         run: |
