@@ -86,7 +86,7 @@ dependencies:
   flutter_google_places_sdk: ^0.4.2+1
   jp_mobile_flutter_ui:
     git:
-      url: git@github.com:JobProgress-Org/jp_mobile_main_v2_uikit.git
+      url: https://github.com/manveer-logiciel/jp-mobile-ui-kit-private.git
       ref: develop
   flutter_udid: ^3.0.0
   decimal: ^3.2.1
