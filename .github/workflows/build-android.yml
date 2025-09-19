@@ -1,0 +1,73 @@
+name: Build Android App Bundle
+
+on:
+  workflow_call:
+    inputs:
+      app_version:
+        required: true
+        type: string
+      build_number:
+        required: true
+        type: string
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      
+      - name: Create key.properties
+        run: |
+          echo "storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=../keystore.jks" >> android/key.properties
+      
+      - name: Create keystore file
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/keystore.jks
+      
+      - name: Update version in local.properties
+        run: |
+          echo "flutter.versionName=${{ inputs.app_version }}" > android/local.properties
+          echo "flutter.versionCode=${{ inputs.build_number }}" >> android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+      
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+      
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-app-bundle-${{ inputs.app_version }}-${{ inputs.build_number }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+      
+      - name: Build Summary
+        run: |
+          echo "## 🤖 Android Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ inputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Number** | \`${{ inputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **App Bundle ready for upload to Play Store**" >> $GITHUB_STEP_SUMMARY

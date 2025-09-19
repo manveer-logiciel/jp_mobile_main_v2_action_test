@@ -26,6 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      app_version: ${{ steps.validation.outputs.app_version }}
+      build_number: ${{ steps.validation.outputs.build_number }}
+      build_platform: ${{ steps.validation.outputs.build_platform }}
     
     steps:
       - name: Checkout code
@@ -112,3 +116,12 @@ jobs:
           echo "- \`ios/Runner.xcodeproj/project.pbxproj\` - MARKETING_VERSION: ${{ steps.validation.outputs.app_version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Ready for next build steps!**" >> $GITHUB_STEP_SUMMARY
+
+  call-android-build:
+    needs: prepare-build
+    if: ${{ inputs.build_platform == 'Android' || inputs.build_platform == 'Both' }}
+    uses: ./.github/workflows/build-android.yml
+    with:
+      app_version: ${{ needs.prepare-build.outputs.app_version }}
+      build_number: ${{ needs.prepare-build.outputs.build_number }}
+    secrets: inherit
