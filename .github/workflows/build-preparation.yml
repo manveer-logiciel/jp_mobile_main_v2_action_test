@@ -274,13 +274,24 @@ jobs:
           BASE64_LENGTH=$(echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | wc -c)
           echo "📏 Base64 variable length: $BASE64_LENGTH characters"
           
-          # Expected length for 2288 bytes should be around 3051 characters (2288 * 4/3 + padding)
+          # Expected length for 2288 bytes should be around 3052 characters (2288 * 4/3 + padding)
           if [ "$BASE64_LENGTH" -lt 3000 ]; then
             echo "⚠️ WARNING: Base64 seems too short for a 2288-byte keystore"
           fi
           
+          # Debug: Show first and last 50 characters of base64
+          echo "📋 First 50 chars: $(echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | head -c 50)"
+          echo "📋 Last 50 chars: $(echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | tail -c 50)"
+          
           # Clean the base64 string (remove any potential whitespace/newlines) and decode
           echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | tr -d '\n\r\t ' | base64 --decode > android/keystore.jks
+          
+          # Debug: Check if base64 decode command succeeded
+          if [ $? -ne 0 ]; then
+            echo "❌ ERROR: Base64 decoding failed!"
+            echo "This could indicate corrupted base64 content in the variable"
+            exit 1
+          fi
           
           # Verify the keystore file was created and has content
           if [ ! -f android/keystore.jks ]; then
