@@ -118,9 +118,67 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Ready for build steps!**" >> $GITHUB_STEP_SUMMARY
 
+  setup-flutter:
+    name: Setup Flutter Environment
+    needs: prepare-build
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      flutter-cache-key: ${{ steps.flutter-cache.outputs.cache-primary-key }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.2'
+          channel: 'stable'
+          cache: true
+      
+      - name: Cache Flutter pub dependencies
+        id: flutter-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            ~/Library/Caches/dart-pub
+            .dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}-
+            ${{ runner.os }}-pub-
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      - name: Flutter Setup Summary
+        run: |
+          echo "## 💙 Flutter Environment Ready" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Flutter Version** | \`$(flutter --version | head -1)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Dependencies** | ✅ Resolved |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Cache Status** | ${{ steps.flutter-cache.outputs.cache-hit && '✅ Cache Hit' || '🔄 Cache Miss' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Ready for platform builds!** 🚀" >> $GITHUB_STEP_SUMMARY
+
   build-aab:
     name: Building .aab
-    needs: prepare-build
+    needs: [prepare-build, setup-flutter]
     if: ${{ needs.prepare-build.outputs.build_platform == 'Android' || needs.prepare-build.outputs.build_platform == 'Both' }}
     runs-on: macos-latest
     permissions:
@@ -165,15 +223,15 @@ jobs:
             ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}-
             ${{ runner.os }}-gradle-
       
-      - name: Setup Flutter
+      - name: Setup Flutter (Restored from Cache)
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.2'
           channel: 'stable'
           cache: true
       
-      - name: Cache Flutter pub dependencies
-        uses: actions/cache@v4
+      - name: Restore Flutter pub dependencies
+        uses: actions/cache/restore@v4
         with:
           path: |
             ${{ env.PUB_CACHE }}
@@ -279,9 +337,6 @@ jobs:
           echo "flutter.versionCode=${{ needs.prepare-build.outputs.build_number }}" >> android/local.properties
           echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
       
-      - name: Get Flutter dependencies
-        run: flutter pub get
-      
       - name: Build App Bundle
         run: flutter build appbundle --release
       
@@ -306,7 +361,7 @@ jobs:
 
   build-ipa:
     name: Building .ipa
-    needs: prepare-build
+    needs: [prepare-build, setup-flutter]
     if: ${{ needs.prepare-build.outputs.build_platform == 'iOS' || needs.prepare-build.outputs.build_platform == 'Both' }}
     runs-on: macos-latest
     permissions:
@@ -320,6 +375,26 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
       
+      - name: Setup Flutter (Restored from Cache)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.2'
+          channel: 'stable'
+          cache: true
+      
+      - name: Restore Flutter pub dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            ~/Library/Caches/dart-pub
+            .dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}-
+            ${{ runner.os }}-pub-
+      
       - name: Cache CocoaPods dependencies
         uses: actions/cache@v4
         with:
@@ -330,30 +405,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pods-
       
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.27.2'
-          channel: 'stable'
-          cache: true
-      
-      - name: Cache Flutter pub dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.PUB_CACHE }}
-            ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-      
       - name: Configure Git for private repos
         run: |
           TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-      
-      - name: Get Flutter dependencies
-        run: flutter pub get
       
       - name: Install CocoaPods
         run: |
