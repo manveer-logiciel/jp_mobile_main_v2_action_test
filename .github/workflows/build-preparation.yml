@@ -1,4 +1,4 @@
-name: Build Preparation
+name: Integration Build Preparation
 
 on:
   workflow_dispatch:
@@ -23,6 +23,7 @@ on:
 
 jobs:
   prepare-build:
+    name: Prepare Build Environment
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -115,13 +116,172 @@ jobs:
           echo "- \`lib/common/libraries/global.dart\` - appVersion: ${{ steps.validation.outputs.app_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- \`ios/Runner.xcodeproj/project.pbxproj\` - MARKETING_VERSION: ${{ steps.validation.outputs.app_version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Ready for next build steps!**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Ready for build steps!**" >> $GITHUB_STEP_SUMMARY
 
-  call-android-build:
+  build-aab:
+    name: Building .aab
     needs: prepare-build
-    if: ${{ inputs.build_platform == 'Android' || inputs.build_platform == 'Both' }}
-    uses: ./.github/workflows/build-android.yml
-    with:
-      app_version: ${{ needs.prepare-build.outputs.app_version }}
-      build_number: ${{ needs.prepare-build.outputs.build_number }}
-    secrets: inherit
+    if: ${{ needs.prepare-build.outputs.build_platform == 'Android' || needs.prepare-build.outputs.build_platform == 'Both' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.2'
+          channel: 'stable'
+          cache: true
+      
+      - name: Cache Flutter pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      - name: Create key.properties
+        run: |
+          echo "storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=../keystore.jks" >> android/key.properties
+      
+      - name: Create keystore file
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/keystore.jks
+      
+      - name: Update version in local.properties
+        run: |
+          echo "flutter.versionName=${{ needs.prepare-build.outputs.app_version }}" > android/local.properties
+          echo "flutter.versionCode=${{ needs.prepare-build.outputs.build_number }}" >> android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+      
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+      
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-app-bundle-${{ needs.prepare-build.outputs.app_version }}-${{ needs.prepare-build.outputs.build_number }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+      
+      - name: Android Build Summary
+        run: |
+          echo "## 🤖 Android Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ needs.prepare-build.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Number** | \`${{ needs.prepare-build.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **App Bundle ready for upload to Play Store**" >> $GITHUB_STEP_SUMMARY
+
+  build-ipa:
+    name: Building .ipa
+    needs: prepare-build
+    if: ${{ needs.prepare-build.outputs.build_platform == 'iOS' || needs.prepare-build.outputs.build_platform == 'Both' }}
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      - name: Cache CocoaPods dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/Pods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.2'
+          channel: 'stable'
+          cache: true
+      
+      - name: Cache Flutter pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+      
+      - name: Build iOS (No Code Signing)
+        run: flutter build ios --release --no-codesign
+      
+      - name: iOS Build Summary
+        run: |
+          echo "## 📱 iOS Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ needs.prepare-build.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Number** | \`${{ needs.prepare-build.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️ **iOS build completed without code signing**" >> $GITHUB_STEP_SUMMARY
+          echo "📝 **Note:** Code signing and .ipa generation requires Apple Developer certificates" >> $GITHUB_STEP_SUMMARY
