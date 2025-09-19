@@ -24,7 +24,7 @@ on:
 jobs:
   prepare-build:
     name: Prepare Build Environment
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: write
     outputs:
@@ -122,7 +122,7 @@ jobs:
     name: Building .aab
     needs: prepare-build
     if: ${{ needs.prepare-build.outputs.build_platform == 'Android' || needs.prepare-build.outputs.build_platform == 'Both' }}
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
       packages: read
@@ -144,7 +144,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.ANDROID_HOME }}
+            ~/Library/Android/sdk
             ~/.android
           key: ${{ runner.os }}-android-sdk-${{ hashFiles('android/build.gradle', 'android/app/build.gradle') }}
           restore-keys: |
@@ -157,6 +157,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.gradle/daemon
+            ~/Library/Caches/gradle
             android/.gradle
             android/app/.gradle
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'android/gradle.properties') }}
@@ -177,6 +178,7 @@ jobs:
           path: |
             ${{ env.PUB_CACHE }}
             ~/.pub-cache
+            ~/Library/Caches/dart-pub
             .dart_tool
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
           restore-keys: |
@@ -189,6 +191,7 @@ jobs:
           path: |
             ~/.konan
             ~/.kotlin
+            ~/Library/Caches/kotlin
             android/build
             android/app/build/intermediates
           key: ${{ runner.os }}-kotlin-${{ hashFiles('**/*.kt', '**/*.gradle*') }}
