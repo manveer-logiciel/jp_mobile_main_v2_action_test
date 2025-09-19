@@ -79,6 +79,15 @@ android {
     }
     kotlinOptions {
         jvmTarget = '17'
+        freeCompilerArgs += [
+            '-Xopt-in=kotlin.RequiresOptIn',
+            '-Xjvm-default=all'
+        ]
+    }
+
+    dexOptions {
+        javaMaxHeapSize "4g"
+        preDexLibraries false
     }
 }
 
