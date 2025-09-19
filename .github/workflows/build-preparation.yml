@@ -302,13 +302,6 @@ jobs:
           fi
           
           echo "✅ key.properties created successfully"
-          
-          # Show properties (without sensitive values)
-          echo "📋 Key properties configured:"
-          echo "  - Store file: ../keystore.jks"
-          echo "  - Key alias: ${{ secrets.ANDROID_KEY_ALIAS }}"
-          echo "  - Store password: [HIDDEN]"
-          echo "  - Key password: [HIDDEN]"
       
       - name: Verify keystore access
         run: |
