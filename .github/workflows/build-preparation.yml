@@ -203,16 +203,75 @@ jobs:
           TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
+      - name: Decode and create keystore file
+        run: |
+          echo "🔐 Creating keystore from base64 secret..."
+          
+          # Decode base64 keystore and save it
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
+          
+          # Verify the keystore file was created and has content
+          if [ ! -f android/keystore.jks ]; then
+            echo "❌ ERROR: Keystore file was not created"
+            exit 1
+          fi
+          
+          # Check file size (should be > 0)
+          KEYSTORE_SIZE=$(stat -f%z android/keystore.jks 2>/dev/null || stat -c%s android/keystore.jks 2>/dev/null || echo "0")
+          echo "📏 Keystore file size: $KEYSTORE_SIZE bytes"
+          
+          if [ "$KEYSTORE_SIZE" -eq 0 ]; then
+            echo "❌ ERROR: Keystore file is empty"
+            exit 1
+          fi
+          
+          # Set proper permissions
+          chmod 600 android/keystore.jks
+          echo "✅ Keystore created and secured successfully"
+      
       - name: Create key.properties
         run: |
+          echo "🔑 Creating key.properties..."
           echo "storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}" > android/key.properties
           echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
           echo "storeFile=../keystore.jks" >> android/key.properties
+          
+          # Verify key.properties was created
+          if [ ! -f android/key.properties ]; then
+            echo "❌ ERROR: key.properties was not created"
+            exit 1
+          fi
+          
+          echo "✅ key.properties created successfully"
+          
+          # Show properties (without sensitive values)
+          echo "📋 Key properties configured:"
+          echo "  - Store file: ../keystore.jks"
+          echo "  - Key alias: ${{ secrets.ANDROID_KEY_ALIAS }}"
+          echo "  - Store password: [HIDDEN]"
+          echo "  - Key password: [HIDDEN]"
       
-      - name: Create keystore file
+      - name: Verify keystore access
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/keystore.jks
+          echo "🔍 Verifying keystore access..."
+          
+          # Try to list the keystore contents to verify password and alias
+          if command -v keytool >/dev/null 2>&1; then
+            echo "Testing keystore access with provided credentials..."
+            keytool -list -v -keystore android/keystore.jks -storepass "${{ secrets.ANDROID_STORE_PASSWORD }}" -alias "${{ secrets.ANDROID_KEY_ALIAS }}" || {
+              echo "❌ ERROR: Cannot access keystore with provided credentials"
+              echo "This could indicate:"
+              echo "  1. Incorrect ANDROID_STORE_PASSWORD"
+              echo "  2. Incorrect ANDROID_KEY_ALIAS" 
+              echo "  3. Corrupted keystore file"
+              echo "  4. Invalid base64 encoding of keystore"
+              exit 1
+            }
+            echo "✅ Keystore verification successful"
+          else
+            echo "⚠️ keytool not available, skipping verification"
+          fi
       
       - name: Update version in local.properties
         run: |
