@@ -140,15 +140,28 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}
+            ~/.android
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('android/build.gradle', 'android/app/build.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
+      
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+            ~/.gradle/daemon
             android/.gradle
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+            android/app/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'android/gradle.properties') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}-
             ${{ runner.os }}-gradle-
       
       - name: Setup Flutter
@@ -164,9 +177,23 @@ jobs:
           path: |
             ${{ env.PUB_CACHE }}
             ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+            .dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
           restore-keys: |
+            ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}-
             ${{ runner.os }}-pub-
+      
+      - name: Cache Kotlin compilation
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.kotlin
+            android/build
+            android/app/build/intermediates
+          key: ${{ runner.os }}-kotlin-${{ hashFiles('**/*.kt', '**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-kotlin-
       
       - name: Configure Git for private repos
         run: |
