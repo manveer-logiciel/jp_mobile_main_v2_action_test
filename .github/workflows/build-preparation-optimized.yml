@@ -370,10 +370,34 @@ jobs:
           security import $CERTIFICATE_PATH -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
           
-          # Install both provisioning profiles
+          # Install both provisioning profiles with proper UUIDs
+          echo "📱 Installing provisioning profiles..."
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $SHARE_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+          
+          # Extract UUID and Name from provisioning profiles
+          MAIN_PROFILE_UUID=$(grep -A1 -a "UUID" $MAIN_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          SHARE_PROFILE_UUID=$(grep -A1 -a "UUID" $SHARE_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          
+          MAIN_PROFILE_NAME=$(grep -A1 -a "Name" $MAIN_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          SHARE_PROFILE_NAME=$(grep -A1 -a "Name" $SHARE_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          
+          echo "📋 Main app profile UUID: $MAIN_PROFILE_UUID"
+          echo "📋 Main app profile Name: $MAIN_PROFILE_NAME"
+          echo "📋 Share extension profile UUID: $SHARE_PROFILE_UUID"
+          echo "📋 Share extension profile Name: $SHARE_PROFILE_NAME"
+          
+          # Copy profiles with proper UUID names
+          cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision
+          cp $SHARE_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision
+          
+          # Update ExportOptions.plist with actual profile names
+          echo "📝 Updating ExportOptions.plist with actual profile names..."
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp $MAIN_PROFILE_NAME" ios/ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp.Share-Extension $SHARE_PROFILE_NAME" ios/ExportOptions.plist
+          
+          # List installed profiles for verification
+          echo "📋 Installed provisioning profiles:"
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
           
           echo "✅ iOS code signing setup complete for main app and share extension"
       
@@ -415,7 +439,8 @@ jobs:
           flutter build ipa --release \
             --export-options-plist=ios/ExportOptions.plist \
             --build-name=${{ needs.prepare-and-validate.outputs.app_version }} \
-            --build-number=${{ needs.prepare-and-validate.outputs.build_number }}
+            --build-number=${{ needs.prepare-and-validate.outputs.build_number }} \
+            --dart-define=FLUTTER_WEB_AUTO_DETECT=true
       
       - name: Upload iOS App (.ipa)
         uses: actions/upload-artifact@v4
