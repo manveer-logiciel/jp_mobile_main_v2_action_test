@@ -338,25 +338,38 @@ jobs:
         run: |
           echo "🔧 Configuring Xcode project for manual signing..."
           
-          # Set manual signing for main app (Runner target)
-          /usr/libexec/PlistBuddy -c "Set :objects:97C147061CF9000F007C117D:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:97C147071CF9000F007C117D:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:249021D4217E4FDB00AE95B9:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          # Function to safely set plist value (add if doesn't exist, set if exists)
+          safe_pbxproj_set() {
+            local target_id="$1"
+            local key="$2"
+            local value="$3"
+            
+            if /usr/libexec/PlistBuddy -c "Print :objects:$target_id:buildSettings:$key" ios/Runner.xcodeproj/project.pbxproj >/dev/null 2>&1; then
+              /usr/libexec/PlistBuddy -c "Set :objects:$target_id:buildSettings:$key $value" ios/Runner.xcodeproj/project.pbxproj
+            else
+              /usr/libexec/PlistBuddy -c "Add :objects:$target_id:buildSettings:$key string $value" ios/Runner.xcodeproj/project.pbxproj
+            fi
+          }
           
-          # Set manual signing for Share Extension target
-          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5528B6384500902FF7:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5628B6384500902FF7:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5728B6384500902FF7:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          # Configure main app (Runner target) - Debug, Release, Profile
+          echo "📱 Configuring main app signing..."
+          safe_pbxproj_set "97C147061CF9000F007C117D" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "CODE_SIGN_STYLE" "Manual"
           
-          # Set code sign identity to Apple Distribution for main app
-          /usr/libexec/PlistBuddy -c "Set :objects:97C147061CF9000F007C117D:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:97C147071CF9000F007C117D:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:249021D4217E4FDB00AE95B9:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          safe_pbxproj_set "97C147061CF9000F007C117D" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "CODE_SIGN_IDENTITY" "Apple Distribution"
           
-          # Set code sign identity to Apple Distribution for Share Extension
-          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5528B6384500902FF7:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5628B6384500902FF7:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5728B6384500902FF7:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          # Configure Share Extension target - Debug, Release, Profile
+          echo "📱 Configuring Share Extension signing..."
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "CODE_SIGN_STYLE" "Manual"
+          
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "CODE_SIGN_IDENTITY" "Apple Distribution"
           
           echo "✅ Xcode project configured for manual signing (both main app and Share Extension)"
       
