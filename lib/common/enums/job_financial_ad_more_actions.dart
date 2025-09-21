@@ -1,4 +1,0 @@
-enum JobFinancialAddMoreActions {
-  createInvoice,
-  changeOrder
-}

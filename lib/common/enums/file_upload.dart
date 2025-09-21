@@ -1,4 +1,0 @@
-enum UploadFileFrom {
-  popup,
-  scanner
-}

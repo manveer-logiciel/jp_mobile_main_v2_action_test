@@ -1,4 +1,0 @@
-enum InsuranceFormType {
-  add,
-  edit
-}

@@ -1,4 +1,0 @@
-enum DatePickerType {
-  start,
-  end
-}

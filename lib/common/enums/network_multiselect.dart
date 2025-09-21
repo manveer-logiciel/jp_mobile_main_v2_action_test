@@ -1,5 +1,0 @@
-
-enum JPNetworkMultiSelectType {
-  cities,
-  customFieldSubOptions
-}

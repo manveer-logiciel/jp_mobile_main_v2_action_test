@@ -1,4 +1,0 @@
-enum UserPreferencesEnum {
- saveToGallery,
- nearByJobAccess,
-}

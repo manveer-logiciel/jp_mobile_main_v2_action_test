@@ -1,4 +1,0 @@
-enum FormToggles {
-  remindNotification,
-  stageLock,
-}

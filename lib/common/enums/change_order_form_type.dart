@@ -1,4 +1,0 @@
-enum ChangeOrderFormType {
-  createForm,
-  editForm,
-}

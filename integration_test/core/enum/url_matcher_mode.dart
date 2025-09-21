@@ -1,4 +1,0 @@
-enum JPUrlMatcherMode {
-  fullRequestMatch,
-  onlyUrlMatch,
-}

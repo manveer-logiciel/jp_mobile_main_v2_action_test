@@ -1,5 +1,0 @@
-
-enum RecurringType {
-  appointment,
-  salesAutomation
-}

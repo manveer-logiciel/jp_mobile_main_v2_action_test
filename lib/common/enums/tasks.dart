@@ -1,5 +1,0 @@
-
-enum ReminderNotificationType {
-  recurring,
-  beforeDueDate
-}

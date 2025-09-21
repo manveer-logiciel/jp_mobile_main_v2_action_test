@@ -1,4 +1,0 @@
-enum QuickActionType {
-  jobSearch,
-  jobListing
-}

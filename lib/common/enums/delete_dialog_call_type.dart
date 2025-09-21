@@ -1,4 +1,0 @@
-enum DeleteDialogCallType {
-  customerListing,
-  jobListing,
-}

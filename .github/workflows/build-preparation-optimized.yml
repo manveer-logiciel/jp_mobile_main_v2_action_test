@@ -541,7 +541,9 @@ jobs:
             --export-options-plist=ios/ExportOptions.plist \
             --build-name=${{ needs.prepare-and-validate.outputs.app_version }} \
             --build-number=${{ needs.prepare-and-validate.outputs.build_number }} \
-            --dart-define=FLUTTER_WEB_AUTO_DETECT=true
+            --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
+            --split-debug-info=build/ios/debug-info \
+            --obfuscate
       
       - name: Upload iOS App (.ipa)
         uses: actions/upload-artifact@v4
