@@ -416,25 +416,39 @@ jobs:
           # Extract UUID and Name from provisioning profiles
           echo "📋 Extracting provisioning profile information..."
           
-          MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          # Use more robust extraction methods
+          MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           
-          MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           
           echo "📋 Main app profile UUID: $MAIN_PROFILE_UUID"
           echo "📋 Main app profile Name: $MAIN_PROFILE_NAME"
           echo "📋 Share extension profile UUID: $SHARE_PROFILE_UUID"
           echo "📋 Share extension profile Name: $SHARE_PROFILE_NAME"
           
-          # Validate that we extracted valid values
+          # Validate that we extracted valid values and provide better debugging
           if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$MAIN_PROFILE_NAME" ]] || [[ -z "$SHARE_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_NAME" ]]; then
             echo "❌ ERROR: Failed to extract provisioning profile information"
             echo "📋 Main profile UUID: '$MAIN_PROFILE_UUID'"
             echo "📋 Main profile Name: '$MAIN_PROFILE_NAME'"
             echo "📋 Share profile UUID: '$SHARE_PROFILE_UUID'"
             echo "📋 Share profile Name: '$SHARE_PROFILE_NAME'"
+            
+            # Additional debugging - show raw profile content
+            echo "🔍 DEBUG: Examining main profile content..."
+            security cms -D -i $MAIN_PROFILE_PATH | head -50
+            echo "🔍 DEBUG: Examining share profile content..."
+            security cms -D -i $SHARE_PROFILE_PATH | head -50
             exit 1
+          fi
+          
+          # Additional validation - check if UUID and Name make sense
+          if [[ ${#MAIN_PROFILE_UUID} -ne 36 ]] || [[ ${#SHARE_PROFILE_UUID} -ne 36 ]]; then
+            echo "⚠️  WARNING: Profile UUIDs may be incorrect (should be 36 characters)"
+            echo "📋 Main profile UUID length: ${#MAIN_PROFILE_UUID}"
+            echo "📋 Share profile UUID length: ${#SHARE_PROFILE_UUID}"
           fi
           
           # Copy profiles with proper UUID names
@@ -444,9 +458,28 @@ jobs:
           # Update ExportOptions.plist with actual profile names
           echo "📝 Updating ExportOptions.plist with actual profile names..."
           
-          # Safely update provisioning profiles in ExportOptions.plist
-          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp \"$MAIN_PROFILE_NAME\"" ios/ExportOptions.plist
-          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp.Share-Extension \"$SHARE_PROFILE_NAME\"" ios/ExportOptions.plist
+          # Create backup of original ExportOptions.plist
+          cp ios/ExportOptions.plist ios/ExportOptions.plist.backup
+          
+          # Function to safely update plist values
+          safe_plist_update() {
+            local key="$1"
+            local value="$2"
+            
+            # Try to set, if it fails, try to add
+            if ! /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:$key \"$value\"" ios/ExportOptions.plist 2>/dev/null; then
+              # If Set fails, try to add the key
+              /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$key string \"$value\"" ios/ExportOptions.plist 2>/dev/null || {
+                echo "⚠️  WARNING: Failed to update ExportOptions.plist for key: $key"
+                return 1
+              }
+            fi
+            return 0
+          }
+          
+          # Update both provisioning profiles
+          safe_plist_update "com.job.progressapp" "$MAIN_PROFILE_NAME"
+          safe_plist_update "com.job.progressapp.Share-Extension" "$SHARE_PROFILE_NAME"
           
           # Show updated ExportOptions.plist for debugging
           echo "📋 Updated ExportOptions.plist:"
@@ -471,17 +504,28 @@ jobs:
           # Verify provisioning profiles content and bundle IDs
           echo "📋 Verifying provisioning profiles bundle IDs..."
           
-          MAIN_BUNDLE_ID=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>[^.]*\.\(.*\)<\/string>.*/\1/' | head -1)
-          SHARE_BUNDLE_ID=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>[^.]*\.\(.*\)<\/string>.*/\1/' | head -1)
+          # More robust extraction of bundle IDs
+          MAIN_BUNDLE_ID_FULL=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_BUNDLE_ID_FULL=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           
-          echo "📋 Main app bundle ID from profile: $MAIN_BUNDLE_ID"
-          echo "📋 Share extension bundle ID from profile: $SHARE_BUNDLE_ID"
+          # Extract just the bundle ID part (remove team ID prefix)
+          MAIN_BUNDLE_ID=$(echo "$MAIN_BUNDLE_ID_FULL" | sed 's/^[^.]*\.//')
+          SHARE_BUNDLE_ID=$(echo "$SHARE_BUNDLE_ID_FULL" | sed 's/^[^.]*\.//')
+          
+          echo "📋 Main app full identifier: $MAIN_BUNDLE_ID_FULL"
+          echo "📋 Main app bundle ID: $MAIN_BUNDLE_ID"
+          echo "📋 Share extension full identifier: $SHARE_BUNDLE_ID_FULL"
+          echo "📋 Share extension bundle ID: $SHARE_BUNDLE_ID"
           
           # Validate bundle IDs match expected values
           if [[ "$MAIN_BUNDLE_ID" != "com.job.progressapp" ]]; then
             echo "❌ ERROR: Main app provisioning profile bundle ID mismatch"
             echo "   Expected: com.job.progressapp"
             echo "   Found: $MAIN_BUNDLE_ID"
+            
+            # Show all available app identifiers for debugging
+            echo "🔍 DEBUG: All application identifiers in main profile:"
+            security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 -B1 "application-identifier"
             exit 1
           fi
           
@@ -489,6 +533,10 @@ jobs:
             echo "❌ ERROR: Share extension provisioning profile bundle ID mismatch"
             echo "   Expected: com.job.progressapp.Share-Extension"
             echo "   Found: $SHARE_BUNDLE_ID"
+            
+            # Show all available app identifiers for debugging
+            echo "🔍 DEBUG: All application identifiers in share extension profile:"
+            security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A1 -B1 "application-identifier"
             exit 1
           fi
           
@@ -504,8 +552,17 @@ jobs:
           MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
           SHARE_PROFILE_PATH=$RUNNER_TEMP/share_extension.mobileprovision
           
-          MAIN_PROFILE_UUID=$(grep -A1 -a "UUID" $MAIN_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
-          SHARE_PROFILE_UUID=$(grep -A1 -a "UUID" $SHARE_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          # Use the same robust extraction method as before
+          MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          
+          # Validate the extracted UUIDs
+          if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_UUID" ]]; then
+            echo "❌ ERROR: Failed to extract provisioning profile UUIDs for Xcode project configuration"
+            echo "📋 Main profile UUID: '$MAIN_PROFILE_UUID'"
+            echo "📋 Share profile UUID: '$SHARE_PROFILE_UUID'"
+            exit 1
+          fi
           
           echo "📋 Setting Main app profile UUID: $MAIN_PROFILE_UUID"
           echo "📋 Setting Share extension profile UUID: $SHARE_PROFILE_UUID"
@@ -594,7 +651,20 @@ jobs:
           if [ ! -f build/ios/ipa/*.ipa ]; then
             echo "❌ ERROR: IPA file was not created. Build may have failed during export."
             echo "📋 Checking build/ios/ipa directory contents:"
-            ls -la build/ios/ipa/ || echo "Directory does not exist"
+            ls -la build/ios/ipa/ 2>/dev/null || echo "Directory does not exist"
+            
+            echo "📋 Checking for other build artifacts:"
+            ls -la build/ios/ 2>/dev/null || echo "build/ios directory doesn't exist"
+            
+            echo "📋 Checking ExportOptions.plist used:"
+            cat ios/ExportOptions.plist
+            
+            echo "📋 Checking installed provisioning profiles:"
+            ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null || echo "No provisioning profiles directory found"
+            
+            echo "📋 Checking for build logs:"
+            find build/ios -name "*.log" -exec echo "Found log: {}" \; -exec head -20 {} \; 2>/dev/null || true
+            
             exit 1
           fi
           
