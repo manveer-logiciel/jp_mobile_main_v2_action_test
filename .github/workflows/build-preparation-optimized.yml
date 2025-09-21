@@ -384,13 +384,28 @@ jobs:
           
           echo "📝 Updating iOS version to $VERSION ($BUILD_NUMBER)"
           
+          # Function to safely set plist value (add if doesn't exist, set if exists)
+          safe_plist_set() {
+            local plist_file="$1"
+            local key="$2"
+            local value="$3"
+            
+            if /usr/libexec/PlistBuddy -c "Print :$key" "$plist_file" >/dev/null 2>&1; then
+              /usr/libexec/PlistBuddy -c "Set :$key $value" "$plist_file"
+            else
+              /usr/libexec/PlistBuddy -c "Add :$key string $value" "$plist_file"
+            fi
+          }
+          
           # Update Info.plist for main app
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" ios/Runner/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" ios/Runner/Info.plist
+          echo "📱 Updating main app Info.plist..."
+          safe_plist_set "ios/Runner/Info.plist" "CFBundleShortVersionString" "$VERSION"
+          safe_plist_set "ios/Runner/Info.plist" "CFBundleVersion" "$BUILD_NUMBER"
           
           # Update Info.plist for share extension
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "ios/Share Extension/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "ios/Share Extension/Info.plist"
+          echo "📱 Updating share extension Info.plist..."
+          safe_plist_set "ios/Share Extension/Info.plist" "CFBundleShortVersionString" "$VERSION"
+          safe_plist_set "ios/Share Extension/Info.plist" "CFBundleVersion" "$BUILD_NUMBER"
           
           echo "✅ iOS version updated successfully for main app and share extension"
       
