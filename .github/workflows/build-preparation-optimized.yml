@@ -334,6 +334,22 @@ jobs:
       - name: Get Flutter dependencies (if cache miss)
         run: flutter pub get
       
+      - name: Configure Xcode Project for Manual Signing
+        run: |
+          echo "🔧 Configuring Xcode project for manual signing..."
+          
+          # Set manual signing for main app
+          /usr/libexec/PlistBuddy -c "Set :objects:97C147061CF9000F007C117D:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:97C147071CF9000F007C117D:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:249021D4217E4FDB00AE95B9:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          
+          # Set code sign identity to Apple Distribution
+          /usr/libexec/PlistBuddy -c "Set :objects:97C147061CF9000F007C117D:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:97C147071CF9000F007C117D:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:249021D4217E4FDB00AE95B9:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          
+          echo "✅ Xcode project configured for manual signing"
+      
       - name: Install CocoaPods dependencies
         run: |
           cd ios
@@ -395,9 +411,20 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp $MAIN_PROFILE_NAME" ios/ExportOptions.plist
           /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp.Share-Extension $SHARE_PROFILE_NAME" ios/ExportOptions.plist
           
+          # Show updated ExportOptions.plist for debugging
+          echo "📋 Updated ExportOptions.plist:"
+          cat ios/ExportOptions.plist
+          
           # List installed profiles for verification
           echo "📋 Installed provisioning profiles:"
           ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          
+          # Verify provisioning profiles content
+          echo "📋 Verifying main app provisioning profile:"
+          security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A5 -B5 "com.job.progressapp"
+          
+          echo "📋 Verifying share extension provisioning profile:"
+          security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A5 -B5 "com.job.progressapp.Share-Extension"
           
           echo "✅ iOS code signing setup complete for main app and share extension"
       
