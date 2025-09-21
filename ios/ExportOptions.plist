@@ -17,9 +17,9 @@
     <key>provisioningProfiles</key>
     <dict>
         <key>com.job.progressapp</key>
-        <string>JobProgress_AppStore</string>
+        <string>JpApp</string>
         <key>com.job.progressapp.Share-Extension</key>
-        <string>JobProgress_ShareExtension_AppStore</string>
+        <string>XC com job progressapp Share-Extension</string>
     </dict>
 </dict>
 </plist>
