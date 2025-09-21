@@ -451,6 +451,57 @@ jobs:
           
           echo "✅ iOS code signing setup complete for main app and share extension"
       
+      - name: Configure Provisioning Profile UUIDs in Xcode Project
+        run: |
+          echo "🔧 Setting provisioning profile UUIDs in Xcode project..."
+          
+          # Get the profile UUIDs that were extracted earlier
+          MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
+          SHARE_PROFILE_PATH=$RUNNER_TEMP/share_extension.mobileprovision
+          
+          MAIN_PROFILE_UUID=$(grep -A1 -a "UUID" $MAIN_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          SHARE_PROFILE_UUID=$(grep -A1 -a "UUID" $SHARE_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          
+          echo "📋 Setting Main app profile UUID: $MAIN_PROFILE_UUID"
+          echo "📋 Setting Share extension profile UUID: $SHARE_PROFILE_UUID"
+          
+          # Function to safely set plist value (add if doesn't exist, set if exists)
+          safe_pbxproj_set() {
+            local target_id="$1"
+            local key="$2"
+            local value="$3"
+            
+            if /usr/libexec/PlistBuddy -c "Print :objects:$target_id:buildSettings:$key" ios/Runner.xcodeproj/project.pbxproj >/dev/null 2>&1; then
+              /usr/libexec/PlistBuddy -c "Set :objects:$target_id:buildSettings:$key $value" ios/Runner.xcodeproj/project.pbxproj
+            else
+              /usr/libexec/PlistBuddy -c "Add :objects:$target_id:buildSettings:$key string $value" ios/Runner.xcodeproj/project.pbxproj
+            fi
+          }
+          
+          # Set provisioning profile UUIDs for main app (Runner target) - Debug, Release, Profile
+          echo "📱 Setting main app provisioning profile UUIDs..."
+          safe_pbxproj_set "97C147061CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          
+          # Set development team for main app
+          safe_pbxproj_set "97C147061CF9000F007C117D" "DEVELOPMENT_TEAM" "AU42F45627"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "DEVELOPMENT_TEAM" "AU42F45627"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "DEVELOPMENT_TEAM" "AU42F45627"
+          
+          # Set provisioning profile UUIDs for Share Extension target - Debug, Release, Profile
+          echo "📱 Setting Share Extension provisioning profile UUIDs..."
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          
+          # Set development team for Share Extension
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "DEVELOPMENT_TEAM" "AU42F45627"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "DEVELOPMENT_TEAM" "AU42F45627"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "DEVELOPMENT_TEAM" "AU42F45627"
+          
+          echo "✅ Provisioning profile UUIDs configured for both main app and Share Extension"
+      
       - name: Update iOS Version
         run: |
           VERSION="${{ needs.prepare-and-validate.outputs.app_version }}"
