@@ -414,16 +414,28 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           
           # Extract UUID and Name from provisioning profiles
-          MAIN_PROFILE_UUID=$(grep -A1 -a "UUID" $MAIN_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
-          SHARE_PROFILE_UUID=$(grep -A1 -a "UUID" $SHARE_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          echo "📋 Extracting provisioning profile information..."
           
-          MAIN_PROFILE_NAME=$(grep -A1 -a "Name" $MAIN_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
-          SHARE_PROFILE_NAME=$(grep -A1 -a "Name" $SHARE_PROFILE_PATH | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          
+          MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           
           echo "📋 Main app profile UUID: $MAIN_PROFILE_UUID"
           echo "📋 Main app profile Name: $MAIN_PROFILE_NAME"
           echo "📋 Share extension profile UUID: $SHARE_PROFILE_UUID"
           echo "📋 Share extension profile Name: $SHARE_PROFILE_NAME"
+          
+          # Validate that we extracted valid values
+          if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$MAIN_PROFILE_NAME" ]] || [[ -z "$SHARE_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_NAME" ]]; then
+            echo "❌ ERROR: Failed to extract provisioning profile information"
+            echo "📋 Main profile UUID: '$MAIN_PROFILE_UUID'"
+            echo "📋 Main profile Name: '$MAIN_PROFILE_NAME'"
+            echo "📋 Share profile UUID: '$SHARE_PROFILE_UUID'"
+            echo "📋 Share profile Name: '$SHARE_PROFILE_NAME'"
+            exit 1
+          fi
           
           # Copy profiles with proper UUID names
           cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision
@@ -431,23 +443,56 @@ jobs:
           
           # Update ExportOptions.plist with actual profile names
           echo "📝 Updating ExportOptions.plist with actual profile names..."
-          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp $MAIN_PROFILE_NAME" ios/ExportOptions.plist
-          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp.Share-Extension $SHARE_PROFILE_NAME" ios/ExportOptions.plist
+          
+          # Safely update provisioning profiles in ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp \"$MAIN_PROFILE_NAME\"" ios/ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:com.job.progressapp.Share-Extension \"$SHARE_PROFILE_NAME\"" ios/ExportOptions.plist
           
           # Show updated ExportOptions.plist for debugging
           echo "📋 Updated ExportOptions.plist:"
           cat ios/ExportOptions.plist
           
+          # Validate that the profile names were set correctly
+          UPDATED_MAIN_PROFILE=$(/usr/libexec/PlistBuddy -c "Print :provisioningProfiles:com.job.progressapp" ios/ExportOptions.plist)
+          UPDATED_SHARE_PROFILE=$(/usr/libexec/PlistBuddy -c "Print :provisioningProfiles:com.job.progressapp.Share-Extension" ios/ExportOptions.plist)
+          
+          echo "📋 Validation - Main app profile in ExportOptions: $UPDATED_MAIN_PROFILE"
+          echo "📋 Validation - Share extension profile in ExportOptions: $UPDATED_SHARE_PROFILE"
+          
+          if [[ "$UPDATED_MAIN_PROFILE" != "$MAIN_PROFILE_NAME" ]] || [[ "$UPDATED_SHARE_PROFILE" != "$SHARE_PROFILE_NAME" ]]; then
+            echo "❌ ERROR: Failed to update ExportOptions.plist with correct profile names"
+            exit 1
+          fi
+          
           # List installed profiles for verification
           echo "📋 Installed provisioning profiles:"
           ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
           
-          # Verify provisioning profiles content
-          echo "📋 Verifying main app provisioning profile:"
-          security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A5 -B5 "com.job.progressapp"
+          # Verify provisioning profiles content and bundle IDs
+          echo "📋 Verifying provisioning profiles bundle IDs..."
           
-          echo "📋 Verifying share extension provisioning profile:"
-          security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A5 -B5 "com.job.progressapp.Share-Extension"
+          MAIN_BUNDLE_ID=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>[^.]*\.\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_BUNDLE_ID=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>[^.]*\.\(.*\)<\/string>.*/\1/' | head -1)
+          
+          echo "📋 Main app bundle ID from profile: $MAIN_BUNDLE_ID"
+          echo "📋 Share extension bundle ID from profile: $SHARE_BUNDLE_ID"
+          
+          # Validate bundle IDs match expected values
+          if [[ "$MAIN_BUNDLE_ID" != "com.job.progressapp" ]]; then
+            echo "❌ ERROR: Main app provisioning profile bundle ID mismatch"
+            echo "   Expected: com.job.progressapp"
+            echo "   Found: $MAIN_BUNDLE_ID"
+            exit 1
+          fi
+          
+          if [[ "$SHARE_BUNDLE_ID" != "com.job.progressapp.Share-Extension" ]]; then
+            echo "❌ ERROR: Share extension provisioning profile bundle ID mismatch"
+            echo "   Expected: com.job.progressapp.Share-Extension"
+            echo "   Found: $SHARE_BUNDLE_ID"
+            exit 1
+          fi
+          
+          echo "✅ Bundle ID validation successful"
           
           echo "✅ iOS code signing setup complete for main app and share extension"
       
@@ -544,9 +589,21 @@ jobs:
             --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
             --split-debug-info=build/ios/debug-info \
             --obfuscate
+          
+          # Verify IPA was created successfully
+          if [ ! -f build/ios/ipa/*.ipa ]; then
+            echo "❌ ERROR: IPA file was not created. Build may have failed during export."
+            echo "📋 Checking build/ios/ipa directory contents:"
+            ls -la build/ios/ipa/ || echo "Directory does not exist"
+            exit 1
+          fi
+          
+          echo "✅ IPA file created successfully:"
+          ls -la build/ios/ipa/*.ipa
       
       - name: Upload iOS App (.ipa)
         uses: actions/upload-artifact@v4
+        if: success() && hashFiles('build/ios/ipa/*.ipa') != ''
         with:
           name: ios-app-${{ needs.prepare-and-validate.outputs.app_version }}-${{ needs.prepare-and-validate.outputs.build_number }}
           path: build/ios/ipa/*.ipa
@@ -558,19 +615,25 @@ jobs:
           security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
       
       - name: iOS Build Summary
+        if: always()
         run: |
-          echo "## 📱 iOS Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 📱 iOS Build Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Bundle ID** | \`com.job.progressapp\` |" >> $GITHUB_STEP_SUMMARY
+          
           if [ -f build/ios/ipa/*.ipa ]; then
             echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **iOS app (.ipa) ready for distribution**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Status** | ❌ IPA creation failed |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **iOS build failed during IPA export. Check provisioning profiles and code signing configuration.**" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **iOS app (.ipa) ready for distribution**" >> $GITHUB_STEP_SUMMARY
 
   build-summary:
     name: Build Summary
