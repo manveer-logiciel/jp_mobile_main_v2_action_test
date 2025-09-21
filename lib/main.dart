@@ -100,7 +100,7 @@ class NotFoundPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Page Not Found'),
       ),
-      body: const Center(
+      body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -124,8 +124,10 @@ class NotFoundPage extends StatelessWidget {
             ),
             SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => Get.back(),
-              child: const Text('Go Back'),
+              onPressed: () {
+                Get.back();
+              },
+              child: Text('Go Back'),
             ),
           ],
         ),

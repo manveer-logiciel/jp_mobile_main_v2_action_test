@@ -108,7 +108,8 @@ class SampleListTile extends StatelessWidget {
         item.statusText,
         style: const TextStyle(fontSize: 12),
       ),
-      backgroundColor: item.isCompleted ? Colors.green[100] : Colors.orange[100],
+      backgroundColor:
+          item.isCompleted ? Colors.green.shade100 : Colors.orange.shade100,
       side: BorderSide(
         color: item.isCompleted ? Colors.green : Colors.orange,
         width: 1,
@@ -117,7 +118,7 @@ class SampleListTile extends StatelessWidget {
   }
 
   Widget _buildPriorityChip() {
-    Color chipColor;
+    MaterialColor chipColor;
     switch (item.priorityLevel) {
       case 5:
         chipColor = Colors.red;
@@ -137,7 +138,7 @@ class SampleListTile extends StatelessWidget {
         item.priorityText,
         style: const TextStyle(fontSize: 12),
       ),
-      backgroundColor: chipColor[100],
+      backgroundColor: chipColor.shade100,
       side: BorderSide(color: chipColor, width: 1),
     );
   }

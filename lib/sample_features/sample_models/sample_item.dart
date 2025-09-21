@@ -9,7 +9,7 @@ class SampleItem {
   final DateTime createdAt;
   final DateTime? updatedAt;
 
-  const SampleItem({
+  SampleItem({
     required this.id,
     required this.title,
     required this.description,
@@ -17,9 +17,7 @@ class SampleItem {
     required this.isCompleted,
     DateTime? createdAt,
     this.updatedAt,
-  }) : createdAt = createdAt ?? const SampleItem._defaultDate();
-
-  static DateTime _defaultDate() => DateTime.now();
+  }) : createdAt = createdAt ?? DateTime.now();
 
   /// Create a copy of this item with some fields updated
   SampleItem copyWith({

@@ -42,21 +42,21 @@ class SampleController extends GetxController {
   /// Load initial sample data
   void _loadInitialData() {
     sampleItems.addAll([
-      const SampleItem(
+      SampleItem(
         id: '1',
         title: 'Sample Item 1',
         description: 'This is a test item for GitHub Actions',
         category: 'Testing',
         isCompleted: false,
       ),
-      const SampleItem(
+      SampleItem(
         id: '2',
         title: 'Sample Item 2',
         description: 'Another test item with different properties',
         category: 'Development',
         isCompleted: true,
       ),
-      const SampleItem(
+      SampleItem(
         id: '3',
         title: 'Sample Item 3',
         description: 'Third test item for comprehensive testing',
