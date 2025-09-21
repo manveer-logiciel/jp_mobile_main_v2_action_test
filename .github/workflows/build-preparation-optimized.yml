@@ -338,17 +338,27 @@ jobs:
         run: |
           echo "🔧 Configuring Xcode project for manual signing..."
           
-          # Set manual signing for main app
+          # Set manual signing for main app (Runner target)
           /usr/libexec/PlistBuddy -c "Set :objects:97C147061CF9000F007C117D:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
           /usr/libexec/PlistBuddy -c "Set :objects:97C147071CF9000F007C117D:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
           /usr/libexec/PlistBuddy -c "Set :objects:249021D4217E4FDB00AE95B9:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
           
-          # Set code sign identity to Apple Distribution
+          # Set manual signing for Share Extension target
+          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5528B6384500902FF7:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5628B6384500902FF7:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5728B6384500902FF7:buildSettings:CODE_SIGN_STYLE Manual" ios/Runner.xcodeproj/project.pbxproj
+          
+          # Set code sign identity to Apple Distribution for main app
           /usr/libexec/PlistBuddy -c "Set :objects:97C147061CF9000F007C117D:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
           /usr/libexec/PlistBuddy -c "Set :objects:97C147071CF9000F007C117D:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
           /usr/libexec/PlistBuddy -c "Set :objects:249021D4217E4FDB00AE95B9:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
           
-          echo "✅ Xcode project configured for manual signing"
+          # Set code sign identity to Apple Distribution for Share Extension
+          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5528B6384500902FF7:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5628B6384500902FF7:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :objects:E2B11C5728B6384500902FF7:buildSettings:CODE_SIGN_IDENTITY Apple Distribution" ios/Runner.xcodeproj/project.pbxproj
+          
+          echo "✅ Xcode project configured for manual signing (both main app and Share Extension)"
       
       - name: Install CocoaPods dependencies
         run: |
