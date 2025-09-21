@@ -444,13 +444,88 @@ jobs:
           TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
-      - name: Install CocoaPods
+      - name: Get Flutter dependencies (if cache miss)
+        run: flutter pub get
+      
+      # iOS Code Signing Setup
+      - name: Setup iOS Code Signing
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          echo "🔐 Setting up iOS code signing..."
+          
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
+          SHARE_PROFILE_PATH=$RUNNER_TEMP/share_extension.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          
+          # Import certificate and provisioning profiles from secrets
+          echo -n "$IOS_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $MAIN_PROFILE_PATH
+          echo -n "$IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $SHARE_PROFILE_PATH
+          
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          
+          # Install both provisioning profiles
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $SHARE_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+          
+          echo "✅ iOS code signing setup complete for main app and share extension"
+      
+      - name: Install CocoaPods dependencies
         run: |
           cd ios
-          pod install
+          pod install --repo-update
       
-      - name: Build iOS (No Code Signing)
-        run: flutter build ios --release --no-codesign
+      - name: Update iOS Version
+        run: |
+          VERSION="${{ needs.prepare-build.outputs.app_version }}"
+          BUILD_NUMBER="${{ needs.prepare-build.outputs.build_number }}"
+          
+          echo "📝 Updating iOS version to $VERSION ($BUILD_NUMBER)"
+          
+          # Update Info.plist for main app
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" ios/Runner/Info.plist
+          
+          # Update Info.plist for share extension
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "ios/Share Extension/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "ios/Share Extension/Info.plist"
+          
+          echo "✅ iOS version updated successfully for main app and share extension"
+      
+      - name: Build iOS Archive
+        run: |
+          echo "🔨 Building iOS archive..."
+          flutter build ipa --release \
+            --export-options-plist=ios/ExportOptions.plist \
+            --build-name=${{ needs.prepare-build.outputs.app_version }} \
+            --build-number=${{ needs.prepare-build.outputs.build_number }}
+      
+      - name: Upload iOS App (.ipa)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app-${{ needs.prepare-build.outputs.app_version }}-${{ needs.prepare-build.outputs.build_number }}
+          path: build/ios/ipa/*.ipa
+          retention-days: 30
+      
+      - name: Cleanup Keychain
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
       
       - name: iOS Build Summary
         run: |
@@ -460,6 +535,9 @@ jobs:
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Version** | \`${{ needs.prepare-build.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Build Number** | \`${{ needs.prepare-build.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle ID** | \`com.job.progressapp\` |" >> $GITHUB_STEP_SUMMARY
+          if [ -f build/ios/ipa/*.ipa ]; then
+            echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ℹ️ **iOS build completed without code signing**" >> $GITHUB_STEP_SUMMARY
-          echo "📝 **Note:** Code signing and .ipa generation requires Apple Developer certificates" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **iOS app (.ipa) ready for distribution**" >> $GITHUB_STEP_SUMMARY
