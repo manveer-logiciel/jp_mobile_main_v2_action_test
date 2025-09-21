@@ -1,0 +1,394 @@
+name: Optimized Integration Build Preparation
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: 'App Version (e.g., 3.37.2)'
+        required: true
+        type: string
+      build_number:
+        description: 'Build Number (e.g., 303700200)'
+        required: true
+        type: string
+      build_platform:
+        description: 'Select build platform'
+        required: true
+        type: choice
+        options:
+          - Both
+          - Android
+          - iOS
+        default: Both
+
+env:
+  FLUTTER_VERSION: '3.27.2'
+  JAVA_VERSION: '17'
+
+jobs:
+  prepare-and-validate:
+    name: Prepare & Validate Build
+    runs-on: ubuntu-latest  # Use Ubuntu for faster validation
+    permissions:
+      contents: write
+    outputs:
+      app_version: ${{ steps.validation.outputs.app_version }}
+      build_number: ${{ steps.validation.outputs.build_number }}
+      build_platform: ${{ steps.validation.outputs.build_platform }}
+      should_build_android: ${{ steps.validation.outputs.should_build_android }}
+      should_build_ios: ${{ steps.validation.outputs.should_build_ios }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Validate Inputs & Set Outputs
+        id: validation
+        run: |
+          VERSION="${{ inputs.app_version }}"
+          BUILD_NUMBER="${{ inputs.build_number }}"
+          PLATFORM="${{ inputs.build_platform }}"
+          
+          echo "🔍 Validating inputs..."
+          echo "📋 Version: $VERSION"
+          echo "🔢 Build Number: $BUILD_NUMBER"
+          echo "🏗️ Platform: $PLATFORM"
+          
+          # Validate version format (x.y.z where x, y, z are numbers)
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ ERROR: Invalid version format. Expected format: x.y.z (e.g., 3.37.2)"
+            exit 1
+          fi
+          
+          # Validate build number is numeric
+          if [[ ! $BUILD_NUMBER =~ ^[0-9]+$ ]]; then
+            echo "❌ ERROR: Build number must be numeric"
+            exit 1
+          fi
+          
+          echo "✅ Input validation successful"
+          
+          # Set outputs for next steps
+          echo "app_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
+          
+          # Set conditional build flags
+          if [[ "$PLATFORM" == "Android" || "$PLATFORM" == "Both" ]]; then
+            echo "should_build_android=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build_android=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$PLATFORM" == "iOS" || "$PLATFORM" == "Both" ]]; then
+            echo "should_build_ios=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build_ios=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update Version Files
+        run: |
+          VERSION="${{ steps.validation.outputs.app_version }}"
+          BUILD_NUMBER="${{ steps.validation.outputs.build_number }}"
+          
+          echo "🔄 Updating version files..."
+          
+          # Update pubspec.yaml
+          echo "📝 Updating pubspec.yaml: $VERSION+$BUILD_NUMBER"
+          sed -i "s/^version: .*/version: $VERSION+$BUILD_NUMBER/" pubspec.yaml
+          
+          # Update global.dart
+          echo "📝 Updating lib/common/libraries/global.dart: $VERSION"
+          sed -i "s/String appVersion = '[^']*';/String appVersion = '$VERSION';/" lib/common/libraries/global.dart
+          
+          # Update iOS marketing version
+          echo "📝 Updating iOS marketing version: $VERSION"
+          sed -i "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $VERSION/" ios/Runner.xcodeproj/project.pbxproj
+          
+          echo "✅ Version files updated successfully"
+      
+      - name: Commit Version Updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add pubspec.yaml lib/common/libraries/global.dart ios/Runner.xcodeproj/project.pbxproj
+          git commit -m "Update version to ${{ steps.validation.outputs.app_version }} (build ${{ steps.validation.outputs.build_number }})" || echo "No changes to commit"
+          git push
+
+  # Shared Flutter setup job that both Android and iOS can use
+  setup-flutter-cache:
+    name: Setup Flutter Cache
+    runs-on: ubuntu-latest  # Use Ubuntu for faster setup
+    needs: prepare-and-validate
+    outputs:
+      flutter-cache-key: ${{ steps.flutter-cache.outputs.cache-primary-key }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Cache Flutter pub dependencies
+        id: flutter-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            .dart_tool
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+  build-android:
+    name: Build Android (.aab)
+    needs: [prepare-and-validate, setup-flutter-cache]
+    if: ${{ needs.prepare-and-validate.outputs.should_build_android == 'true' }}
+    runs-on: ubuntu-latest  # Use Ubuntu for Android builds - much faster!
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      # Restore Flutter dependencies from cache
+      - name: Restore Flutter pub dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            .dart_tool
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+      
+      # Consolidated Android caching
+      - name: Cache Android Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android
+            android/.gradle
+            android/app/.gradle
+            android/build
+            ~/.konan
+            ~/.kotlin
+          key: android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ hashFiles('**/*.kt') }}
+          restore-keys: |
+            android-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}-
+            android-${{ runner.os }}-
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      # Simplified keystore creation (remove verbose debugging)
+      - name: Create Android Keystore
+        run: |
+          echo "🔐 Creating keystore..."
+          echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
+          chmod 600 android/keystore.jks
+          echo "✅ Keystore created successfully"
+      
+      - name: Create key.properties
+        run: |
+          echo "🔑 Creating key.properties..."
+          cat > android/key.properties << EOF
+          storePassword=${{ vars.ANDROID_STORE_PASSWORD }}
+          keyPassword=${{ vars.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ vars.ANDROID_KEY_ALIAS }}
+          storeFile=../keystore.jks
+          EOF
+          echo "✅ key.properties created successfully"
+      
+      - name: Update local.properties
+        run: |
+          cat > android/local.properties << EOF
+          flutter.versionName=${{ needs.prepare-and-validate.outputs.app_version }}
+          flutter.versionCode=${{ needs.prepare-and-validate.outputs.build_number }}
+          flutter.sdk=$FLUTTER_ROOT
+          EOF
+      
+      - name: Get Flutter dependencies (if cache miss)
+        run: flutter pub get
+      
+      - name: Build App Bundle
+        run: |
+          echo "🔨 Building Android App Bundle..."
+          flutter build appbundle --release --verbose
+      
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-app-bundle-${{ needs.prepare-and-validate.outputs.app_version }}-${{ needs.prepare-and-validate.outputs.build_number }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+      
+      - name: Build Summary
+        run: |
+          echo "## 🤖 Android Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **App Bundle ready for upload to Play Store**" >> $GITHUB_STEP_SUMMARY
+
+  build-ios:
+    name: Build iOS
+    needs: [prepare-and-validate, setup-flutter-cache]
+    if: ${{ needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
+    runs-on: macos-latest  # iOS requires macOS
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      # Restore Flutter dependencies from cache
+      - name: Restore Flutter pub dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            ~/Library/Caches/dart-pub
+            .dart_tool
+          key: flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-
+      
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/Pods
+            ~/.cocoapods
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: |
+            cocoapods-${{ runner.os }}-
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      - name: Get Flutter dependencies (if cache miss)
+        run: flutter pub get
+      
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install --repo-update
+      
+      - name: Build iOS (No Code Signing)
+        run: |
+          echo "🔨 Building iOS app..."
+          flutter build ios --release --no-codesign --verbose
+      
+      - name: iOS Build Summary
+        run: |
+          echo "## 📱 iOS Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️ **iOS build completed without code signing**" >> $GITHUB_STEP_SUMMARY
+
+  build-summary:
+    name: Build Summary
+    needs: [prepare-and-validate, build-android, build-ios]
+    if: always() && needs.prepare-and-validate.result == 'success'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Generate Final Summary
+        run: |
+          echo "## 🎉 Build Pipeline Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_android }}" == "true" ]]; then
+            if [[ "${{ needs.build-android.result }}" == "success" ]]; then
+              echo "| **Android** | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| **Android** | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| **Android** | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_ios }}" == "true" ]]; then
+            if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
+              echo "| **iOS** | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| **iOS** | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| **iOS** | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ needs.prepare-and-validate.outputs.app_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Number:** \`${{ needs.prepare-and-validate.outputs.build_number }}\`" >> $GITHUB_STEP_SUMMARY
