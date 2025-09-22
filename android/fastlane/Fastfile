@@ -18,27 +18,14 @@ default_platform(:android)
 platform :android do
   desc "Deploy a new version to the Google Play Internal Testing track"
   lane :deploy_internal do
-    # Debug: Show current directory and file structure
-    UI.message("Current working directory: #{Dir.pwd}")
-    UI.message("Listing current directory contents:")
-    Dir.entries(".").each { |entry| UI.message("  #{entry}") }
+    # Get AAB file path from environment variable or use default relative path
+    aab_path = ENV['AAB_FILE_PATH'] || "../build/app/outputs/bundle/release/app-release.aab"
     
-    # Debug: Find all AAB files
-    UI.message("Searching for all AAB files in the project:")
-    aab_files = Dir.glob("**/*.aab")
-    if aab_files.empty?
-      UI.message("  No AAB files found anywhere!")
-    else
-      aab_files.each { |file| UI.message("  Found AAB: #{file}") }
-    end
+    UI.message("Looking for AAB file at: #{aab_path}")
     
-    # The AAB file is created at build/app/outputs/bundle/release/app-release.aab from project root
-    # Since Fastlane runs from android/ directory, we need to go up one level
-    aab_path = "../build/app/outputs/bundle/release/app-release.aab"
-    
-    UI.message("Checking for AAB file at: #{aab_path}")
+    # Verify AAB file exists
     unless File.exist?(aab_path)
-      UI.user_error!("AAB file not found at #{aab_path}. Please check the build process.")
+      UI.user_error!("AAB file not found at #{aab_path}")
     end
     
     UI.message("✅ Found AAB file at: #{aab_path}")
@@ -60,11 +47,11 @@ platform :android do
 
   desc "Deploy a new version to the Google Play Production track"
   lane :deploy_production do
-    # Ensure the AAB file exists
+    # Path to AAB file
     aab_path = "../build/app/outputs/bundle/release/app-release.aab"
     
     unless File.exist?(aab_path)
-      UI.user_error!("AAB file not found at #{aab_path}. Please build the app first.")
+      UI.user_error!("AAB file not found at #{aab_path}")
     end
 
     # Upload to Google Play Console Production
@@ -83,11 +70,11 @@ platform :android do
 
   desc "Deploy a new version to the Google Play Beta track"
   lane :deploy_beta do
-    # Ensure the AAB file exists
+    # Path to AAB file
     aab_path = "../build/app/outputs/bundle/release/app-release.aab"
     
     unless File.exist?(aab_path)
-      UI.user_error!("AAB file not found at #{aab_path}. Please build the app first.")
+      UI.user_error!("AAB file not found at #{aab_path}")
     end
 
     # Upload to Google Play Console Beta

@@ -289,6 +289,10 @@ jobs:
       
       - name: Deploy to Google Play Console Internal Testing
         run: |
+          # Set the absolute path to the AAB file for Fastlane
+          export AAB_FILE_PATH="$(pwd)/build/app/outputs/bundle/release/app-release.aab"
+          echo "AAB file path: $AAB_FILE_PATH"
+          ls -la "$AAB_FILE_PATH"
           cd android
           bundle exec fastlane deploy_internal
         env:
