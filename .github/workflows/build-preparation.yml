@@ -245,7 +245,7 @@ jobs:
     name: Build iOS
     needs: prepare-and-validate
     if: ${{ needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
-    runs-on: macos-13  # Use macOS-13 for faster performance (macos-latest can be slower)
+    runs-on: macos-15  # Use macOS-15 to support Xcode 16.4
     permissions:
       contents: read
       packages: read
@@ -286,6 +286,13 @@ jobs:
           restore-keys: |
             cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-
             cocoapods-${{ runner.os }}-
+      
+      - name: Select Xcode 16.4
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+          echo "Selected Xcode version:"
+          xcode-select -p
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -539,6 +546,12 @@ jobs:
           fi
           
           echo "✅ IPA created: $(ls build/ios/ipa/*.ipa)"
+          echo "📦 IPA file ready for TestFlight upload"
+          
+          # Verify IPA structure for TestFlight compatibility
+          IPA_FILE=$(ls build/ios/ipa/*.ipa)
+          echo "🔍 Verifying IPA structure..."
+          unzip -l "$IPA_FILE" | head -20
       
       - name: Upload iOS App (.ipa)
         uses: actions/upload-artifact@v4
@@ -567,7 +580,13 @@ jobs:
           if [ -f build/ios/ipa/*.ipa ]; then
             echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "✅ **iOS app (.ipa) ready for distribution**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **iOS app (.ipa) ready for TestFlight upload**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🚀 TestFlight Upload Instructions:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Download the .ipa artifact from this workflow run" >> $GITHUB_STEP_SUMMARY
+            echo "2. Use Xcode → Window → Organizer → Distribute App" >> $GITHUB_STEP_SUMMARY
+            echo "3. Or use Transporter app for direct upload" >> $GITHUB_STEP_SUMMARY
+            echo "4. Or use altool: \`xcrun altool --upload-app -f [path-to-ipa] --type ios -u [apple-id] -p [app-password]\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "| **Status** | ❌ IPA creation failed |" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
