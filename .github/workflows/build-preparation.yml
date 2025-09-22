@@ -15,6 +15,11 @@ on:
         description: 'Password for secure operations'
         required: true
         type: string
+      clear_old_caches:
+        description: 'Clear old caches (enable if dependencies updated)'
+        required: false
+        type: boolean
+        default: false
       build_platform:
         description: 'Select build platform'
         required: true
@@ -38,6 +43,7 @@ jobs:
     outputs:
       release_tag: ${{ steps.validation.outputs.release_tag }}
       build_platform: ${{ steps.validation.outputs.build_platform }}
+      clear_old_caches: ${{ steps.validation.outputs.clear_old_caches }}
       should_build_android: ${{ steps.validation.outputs.should_build_android }}
       should_build_ios: ${{ steps.validation.outputs.should_build_ios }}
     
@@ -54,11 +60,13 @@ jobs:
           RELEASE_TAG="${{ inputs.release_tag }}"
           VERIFY_RELEASE_TAG="${{ inputs.verify_release_tag }}"
           PASSWORD="${{ inputs.password }}"
+          CLEAR_CACHES="${{ inputs.clear_old_caches }}"
           PLATFORM="${{ inputs.build_platform }}"
           
           echo "🔍 Validating inputs..."
           echo "🏷️ Release Tag: $RELEASE_TAG"
           echo "🔐 Password: [REDACTED]"
+          echo "🧹 Clear Old Caches: $CLEAR_CACHES"
           echo "🏗️ Platform: $PLATFORM"
           
           # Validate release tags match
@@ -117,6 +125,7 @@ jobs:
           # Set outputs for next steps
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
+          echo "clear_old_caches=$CLEAR_CACHES" >> $GITHUB_OUTPUT
           
           # Set conditional build flags
           if [[ "$PLATFORM" == "Android" || "$PLATFORM" == "Both" ]]; then
@@ -158,8 +167,18 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
       
+      # Clear old caches if requested
+      - name: Clear Old Flutter Caches
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches == 'true' }}
+        run: |
+          echo "🧹 Clearing old Flutter caches..."
+          rm -rf ~/.pub-cache || true
+          rm -rf .dart_tool || true
+          echo "✅ Flutter caches cleared"
+
       # Enhanced Flutter caching with better restore keys
       - name: Cache Flutter Dependencies
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches != 'true' }}
         uses: actions/cache@v4
         with:
           path: |
@@ -172,8 +191,27 @@ jobs:
             flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
             flutter-${{ runner.os }}-
       
+      # Clear old Android caches if requested
+      - name: Clear Old Android Caches
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches == 'true' }}
+        run: |
+          echo "🧹 Clearing old Android caches..."
+          rm -rf ~/.gradle/caches || true
+          rm -rf ~/.gradle/wrapper || true
+          rm -rf ~/.gradle/daemon || true
+          rm -rf ~/.android || true
+          rm -rf android/.gradle || true
+          rm -rf android/app/.gradle || true
+          rm -rf android/build || true
+          rm -rf ~/.konan || true
+          rm -rf ~/.kotlin || true
+          rm -rf /home/runner/.gradle/caches/transforms-* || true
+          rm -rf /home/runner/.gradle/caches/build-cache-* || true
+          echo "✅ Android caches cleared"
+
       # Enhanced Android caching with build cache
       - name: Cache Android Dependencies & Build
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches != 'true' }}
         uses: actions/cache@v4
         with:
           path: |
@@ -295,8 +333,19 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
       
+      # Clear old caches if requested
+      - name: Clear Old Flutter Caches
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches == 'true' }}
+        run: |
+          echo "🧹 Clearing old Flutter caches..."
+          rm -rf ~/.pub-cache || true
+          rm -rf ~/Library/Caches/dart-pub || true
+          rm -rf .dart_tool || true
+          echo "✅ Flutter caches cleared"
+
       # Enhanced Flutter caching for macOS
       - name: Cache Flutter Dependencies  
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches != 'true' }}
         uses: actions/cache@v4
         with:
           path: |
@@ -310,8 +359,21 @@ jobs:
             flutter-macOS-${{ env.FLUTTER_VERSION }}-
             flutter-macOS-
       
+      # Clear old CocoaPods caches if requested
+      - name: Clear Old CocoaPods Caches
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches == 'true' }}
+        run: |
+          echo "🧹 Clearing old CocoaPods caches..."
+          rm -rf ios/Pods || true
+          rm -rf ~/.cocoapods || true
+          rm -rf ~/Library/Caches/CocoaPods || true
+          rm -rf ios/build || true
+          rm -rf ios/.symlinks || true
+          echo "✅ CocoaPods caches cleared"
+
       # Enhanced CocoaPods caching with additional paths
       - name: Cache CocoaPods & iOS Build
+        if: ${{ needs.prepare-and-validate.outputs.clear_old_caches != 'true' }}
         uses: actions/cache@v4
         with:
           path: |
