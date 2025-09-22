@@ -252,6 +252,19 @@ jobs:
           
       
       # Deploy to Google Play Console Internal Testing
+      - name: Cache Ruby Dependencies & Fastlane
+        uses: actions/cache@v4
+        with:
+          path: |
+            android/vendor/bundle
+            ~/.gem
+            ~/.bundle
+            android/.bundle
+          key: ruby-fastlane-${{ runner.os }}-${{ hashFiles('android/Gemfile', 'android/Gemfile.lock') }}-v2
+          restore-keys: |
+            ruby-fastlane-${{ runner.os }}-${{ hashFiles('android/Gemfile') }}-
+            ruby-fastlane-${{ runner.os }}-
+      
       - name: Setup Ruby for Fastlane
         uses: ruby/setup-ruby@v1
         with:
