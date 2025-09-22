@@ -116,6 +116,10 @@ jobs:
           git add pubspec.yaml lib/common/libraries/global.dart ios/Runner.xcodeproj/project.pbxproj
           git commit -m "Update version to ${{ steps.validation.outputs.app_version }} (build ${{ steps.validation.outputs.build_number }})" || echo "No changes to commit"
           git push
+      
+      - name: Validation Complete
+        run: |
+          echo "::notice title=Preparation Complete::✅ Build validation and version updates completed successfully"
 
   build-android:
     name: Build Android (.aab)
@@ -217,10 +221,12 @@ jobs:
       
       - name: Build App Bundle
         run: |
+          echo "::notice title=Android Build::🏗️ Building release app bundle..."
           flutter build appbundle --release \
             --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
             --split-debug-info=build/android/debug-info \
             --obfuscate
+          echo "::notice title=Android Build::✅ App bundle created successfully"
       
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -324,6 +330,7 @@ jobs:
       # Install CocoaPods dependencies with optimization
       - name: Install CocoaPods dependencies
         run: |
+          echo "::notice title=iOS Build::📦 Installing CocoaPods dependencies..."
           cd ios
           # Only run repo update if cache miss or force update needed
           if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
@@ -331,6 +338,7 @@ jobs:
           else
             pod install
           fi
+          echo "::notice title=iOS Build::✅ CocoaPods dependencies installed"
       
       - name: Configure Xcode Project for Manual Signing
         run: |
@@ -446,6 +454,7 @@ jobs:
           fi
           
           echo "✅ iOS code signing setup complete"
+          echo "::notice title=iOS Build::🔐 Code signing configured successfully"
       
       - name: Configure Provisioning Profile UUIDs in Xcode Project
         run: |
@@ -541,6 +550,7 @@ jobs:
       
       - name: Build iOS Archive
         run: |
+          echo "::notice title=iOS Build::🏗️ Building iOS archive (.ipa)..."
           flutter build ipa --release \
             --export-options-plist=ios/ExportOptions.plist \
             --build-name=${{ needs.prepare-and-validate.outputs.app_version }} \
@@ -558,6 +568,7 @@ jobs:
           
           echo "✅ IPA created: $(ls build/ios/ipa/*.ipa)"
           echo "📦 IPA file ready for TestFlight upload"
+          echo "::notice title=iOS Build::✅ IPA archive created successfully"
           
           # Verify IPA structure for TestFlight compatibility
           IPA_FILE=$(ls build/ios/ipa/*.ipa)
@@ -629,32 +640,66 @@ jobs:
     steps:
       - name: Generate Final Build Summary
         run: |
+          echo "::notice title=Build Summary::📊 Generating deployment summary..."
+          
           echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Target | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------------|--------|" >> $GITHUB_STEP_SUMMARY
           
+          # Create deployment status like in Laravel workflow
+          echo "### 🚀 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Job completion status with visual indicators
+          echo "**Prepare & Validate Build**" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.prepare-and-validate.result }}" == "success" ]]; then
+            echo "```diff" >> $GITHUB_STEP_SUMMARY
+            echo "+ ✅ Completed Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "```diff" >> $GITHUB_STEP_SUMMARY
+            echo "- ❌ Failed" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Android Build Status
+          echo "**Build Android (.aab)**" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.prepare-and-validate.outputs.should_build_android }}" == "true" ]]; then
             if [[ "${{ needs.build-android.result }}" == "success" ]]; then
-              echo "| **Android** | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "+ ✅ Deploying to PROD" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
             else
-              echo "| **Android** | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "- ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
             fi
           else
-            echo "| **Android** | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+            echo "```yaml" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "" >> $GITHUB_STEP_SUMMARY
           
+          # iOS Build Status  
+          echo "**Build iOS**" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.prepare-and-validate.outputs.should_build_ios }}" == "true" ]]; then
             if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
-              echo "| **iOS** | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "+ ✅ Deploying to PROD" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
             else
-              echo "| **iOS** | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "- ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
             fi
           else
-            echo "| **iOS** | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+            echo "```yaml" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
           fi
-          
           echo "" >> $GITHUB_STEP_SUMMARY
+          
           echo "### 📋 Build Details" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -663,3 +708,5 @@ jobs:
           echo "| **Platform** | \`${{ needs.prepare-and-validate.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "::notice title=Build Summary::✅ Deployment summary completed"
