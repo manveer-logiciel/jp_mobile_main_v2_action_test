@@ -229,7 +229,7 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
       
-      - name: Build Summary
+      - name: Android Build Summary
         run: |
           echo "## 🤖 Android Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -238,6 +238,17 @@ jobs:
           echo "| **Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Java** | \`${{ env.JAVA_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Gradle** | \`$(cd android && ./gradlew --version | grep 'Gradle' | head -1 | cut -d' ' -f2)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Kotlin** | \`$(cd android && ./gradlew --version | grep 'Kotlin:' | cut -d' ' -f9)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Target SDK** | \`$(grep 'compileSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Min SDK** | \`$(grep 'minSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **App Bundle ready for upload to Play Store**" >> $GITHUB_STEP_SUMMARY
 
@@ -575,11 +586,29 @@ jobs:
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Bundle ID** | \`com.job.progressapp\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle ID** | \`$(plutil -extract CFBundleIdentifier xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || echo 'com.job.progressapp')\` |" >> $GITHUB_STEP_SUMMARY
           
           if [ -f build/ios/ipa/*.ipa ]; then
             echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Status** | ❌ IPA creation failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Xcode** | \`$(xcodebuild -version | head -1 | cut -d' ' -f2)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **iOS SDK** | \`$(xcrun --show-sdk-version --sdk iphoneos)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **macOS SDK** | \`$(xcrun --show-sdk-version --sdk macosx)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **CocoaPods** | \`$(pod --version)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Min iOS Version** | \`$(plutil -extract MinimumOSVersion xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || grep 'IPHONEOS_DEPLOYMENT_TARGET' ios/Runner.xcodeproj/project.pbxproj | head -1 | grep -o '[0-9]*\.[0-9]*' || echo '12.0')\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Swift Version** | \`$(xcrun swift --version | head -1 | cut -d' ' -f4)\` |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f build/ios/ipa/*.ipa ]; then
             echo "✅ **iOS app (.ipa) ready for TestFlight upload**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🚀 TestFlight Upload Instructions:" >> $GITHUB_STEP_SUMMARY
@@ -588,21 +617,19 @@ jobs:
             echo "3. Or use Transporter app for direct upload" >> $GITHUB_STEP_SUMMARY
             echo "4. Or use altool: \`xcrun altool --upload-app -f [path-to-ipa] --type ios -u [apple-id] -p [app-password]\`" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| **Status** | ❌ IPA creation failed |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "❌ **iOS build failed during IPA export. Check provisioning profiles and code signing configuration.**" >> $GITHUB_STEP_SUMMARY
           fi
 
   build-summary:
-    name: Build Summary
+    name: Final Build Summary
     needs: [prepare-and-validate, build-android, build-ios]
     if: always() && needs.prepare-and-validate.result == 'success'
     runs-on: ubuntu-latest
     
     steps:
-      - name: Generate Final Summary
+      - name: Generate Final Build Summary
         run: |
-          echo "## 🎉 Build Pipeline Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Build Target | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|--------------|--------|" >> $GITHUB_STEP_SUMMARY
@@ -628,14 +655,11 @@ jobs:
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** \`${{ needs.prepare-and-validate.outputs.app_version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Number:** \`${{ needs.prepare-and-validate.outputs.build_number }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "## ⚡ Performance Optimizations Applied" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Removed redundant Flutter cache job for parallel execution" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Enhanced caching strategies for Android and iOS" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Streamlined iOS code signing process" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Used macOS-13 runner for faster iOS builds" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Optimized CocoaPods installation logic" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Batched Android configuration steps" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Build Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **App Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platform** | \`${{ needs.prepare-and-validate.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
