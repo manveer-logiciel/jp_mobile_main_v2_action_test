@@ -31,7 +31,7 @@ platform :android do
     UI.message("✅ Found AAB file at: #{aab_path}")
 
     # Upload to Google Play Console Internal Testing
-    upload_to_play_store(
+    supply(
       track: 'internal',
       aab: aab_path,
       skip_upload_apk: true,
@@ -55,7 +55,7 @@ platform :android do
     end
 
     # Upload to Google Play Console Production
-    upload_to_play_store(
+    supply(
       track: 'production',
       aab: aab_path,
       skip_upload_apk: true,
@@ -78,7 +78,7 @@ platform :android do
     end
 
     # Upload to Google Play Console Beta
-    upload_to_play_store(
+    supply(
       track: 'beta',
       aab: aab_path,
       skip_upload_apk: true,
@@ -93,7 +93,7 @@ platform :android do
 
   desc "Promote a release from internal to beta"
   lane :promote_internal_to_beta do
-    upload_to_play_store(
+    supply(
       track: 'internal',
       track_promote_to: 'beta',
       skip_upload_aab: true,
@@ -108,7 +108,7 @@ platform :android do
 
   desc "Promote a release from beta to production"
   lane :promote_beta_to_production do
-    upload_to_play_store(
+    supply(
       track: 'beta',
       track_promote_to: 'production',
       skip_upload_aab: true,
