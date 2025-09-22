@@ -249,6 +249,17 @@ jobs:
             --split-debug-info=build/android/debug-info \
             --obfuscate
           echo "::notice title=Android Build::✅ App bundle created successfully"
+          
+          # Verify AAB was created
+          echo "=== Verifying AAB file creation ==="
+          if [ -f "build/app/outputs/bundle/release/app-release.aab" ]; then
+            echo "✅ AAB file found at build/app/outputs/bundle/release/app-release.aab"
+            ls -la build/app/outputs/bundle/release/app-release.aab
+          else
+            echo "❌ AAB file NOT found at expected location"
+            echo "=== Searching for AAB files ==="
+            find . -name "*.aab" -type f 2>/dev/null || echo "No AAB files found anywhere"
+          fi
       
       # Deploy to Google Play Console Internal Testing
       - name: Setup Ruby for Fastlane

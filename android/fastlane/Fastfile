@@ -18,25 +18,30 @@ default_platform(:android)
 platform :android do
   desc "Deploy a new version to the Google Play Internal Testing track"
   lane :deploy_internal do
-    # Try to find the AAB file in common locations
-    possible_paths = [
-      "../build/app/outputs/bundle/release/app-release.aab",
-      "app/build/outputs/bundle/release/app-release.aab",
-      "../app/build/outputs/bundle/release/app-release.aab"
-    ]
+    # Debug: Show current directory and file structure
+    UI.message("Current working directory: #{Dir.pwd}")
+    UI.message("Listing current directory contents:")
+    Dir.entries(".").each { |entry| UI.message("  #{entry}") }
     
-    aab_path = nil
-    possible_paths.each do |path|
-      if File.exist?(path)
-        aab_path = path
-        UI.message("Found AAB file at: #{path}")
-        break
-      end
+    # Debug: Find all AAB files
+    UI.message("Searching for all AAB files in the project:")
+    aab_files = Dir.glob("**/*.aab")
+    if aab_files.empty?
+      UI.message("  No AAB files found anywhere!")
+    else
+      aab_files.each { |file| UI.message("  Found AAB: #{file}") }
     end
     
-    unless aab_path
-      UI.user_error!("AAB file not found. Searched in: #{possible_paths.join(', ')}")
+    # The AAB file is created at build/app/outputs/bundle/release/app-release.aab from project root
+    # Since Fastlane runs from android/ directory, we need to go up one level
+    aab_path = "../build/app/outputs/bundle/release/app-release.aab"
+    
+    UI.message("Checking for AAB file at: #{aab_path}")
+    unless File.exist?(aab_path)
+      UI.user_error!("AAB file not found at #{aab_path}. Please check the build process.")
     end
+    
+    UI.message("✅ Found AAB file at: #{aab_path}")
 
     # Upload to Google Play Console Internal Testing
     upload_to_play_store(
