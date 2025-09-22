@@ -1,0 +1,123 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:android)
+
+platform :android do
+  desc "Deploy a new version to the Google Play Internal Testing track"
+  lane :deploy_internal do
+    # Ensure the AAB file exists
+    aab_path = "../app/build/outputs/bundle/release/app-release.aab"
+    
+    unless File.exist?(aab_path)
+      UI.user_error!("AAB file not found at #{aab_path}. Please build the app first.")
+    end
+
+    # Upload to Google Play Console Internal Testing
+    upload_to_play_store(
+      track: 'internal',
+      aab: aab_path,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      release_status: 'completed'
+    )
+
+    UI.success("Successfully uploaded AAB to Google Play Console Internal Testing! 🎉")
+    UI.message("The app will be available for internal testing in a few minutes.")
+  end
+
+  desc "Deploy a new version to the Google Play Production track"
+  lane :deploy_production do
+    # Ensure the AAB file exists
+    aab_path = "../app/build/outputs/bundle/release/app-release.aab"
+    
+    unless File.exist?(aab_path)
+      UI.user_error!("AAB file not found at #{aab_path}. Please build the app first.")
+    end
+
+    # Upload to Google Play Console Production
+    upload_to_play_store(
+      track: 'production',
+      aab: aab_path,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      release_status: 'completed'
+    )
+
+    UI.success("Successfully uploaded AAB to Google Play Console Production! 🚀")
+  end
+
+  desc "Deploy a new version to the Google Play Beta track"
+  lane :deploy_beta do
+    # Ensure the AAB file exists
+    aab_path = "../app/build/outputs/bundle/release/app-release.aab"
+    
+    unless File.exist?(aab_path)
+      UI.user_error!("AAB file not found at #{aab_path}. Please build the app first.")
+    end
+
+    # Upload to Google Play Console Beta
+    upload_to_play_store(
+      track: 'beta',
+      aab: aab_path,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      release_status: 'completed'
+    )
+
+    UI.success("Successfully uploaded AAB to Google Play Console Beta! 🎯")
+  end
+
+  desc "Promote a release from internal to beta"
+  lane :promote_internal_to_beta do
+    upload_to_play_store(
+      track: 'internal',
+      track_promote_to: 'beta',
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+
+    UI.success("Successfully promoted from Internal to Beta! 📈")
+  end
+
+  desc "Promote a release from beta to production"
+  lane :promote_beta_to_production do
+    upload_to_play_store(
+      track: 'beta',
+      track_promote_to: 'production',
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+
+    UI.success("Successfully promoted from Beta to Production! 🚀")
+  end
+
+  error do |lane, exception|
+    UI.error("Error in lane #{lane}: #{exception.message}")
+    # You can add custom error handling here, like sending notifications
+  end
+end

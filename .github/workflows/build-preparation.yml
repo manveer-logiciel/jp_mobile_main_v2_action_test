@@ -257,6 +257,26 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
       
+      # Deploy to Google Play Console Internal Testing
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: android
+      
+      - name: Setup Google Play Console Service Account
+        run: |
+          echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
+          chmod 600 android/play-console-service-account.json
+      
+      - name: Deploy to Google Play Console Internal Testing
+        run: |
+          cd android
+          bundle exec fastlane deploy_internal
+        env:
+          GOOGLE_PLAY_KEY_FILE: play-console-service-account.json
+      
       - name: Android Build Summary
         run: |
           echo "## 🤖 Android Build Complete" >> $GITHUB_STEP_SUMMARY
@@ -277,7 +297,7 @@ jobs:
           echo "| **Target SDK** | \`$(grep 'compileSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Min SDK** | \`$(grep 'minSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **App Bundle ready for upload to Play Store**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **App Bundle deployed to Google Play Console Internal Testing**" >> $GITHUB_STEP_SUMMARY
 
   build-ios:
     name: Build iOS
