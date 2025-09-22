@@ -18,11 +18,24 @@ default_platform(:android)
 platform :android do
   desc "Deploy a new version to the Google Play Internal Testing track"
   lane :deploy_internal do
-    # Ensure the AAB file exists (path relative to project root from android directory)
-    aab_path = "../build/app/outputs/bundle/release/app-release.aab"
+    # Try to find the AAB file in common locations
+    possible_paths = [
+      "../build/app/outputs/bundle/release/app-release.aab",
+      "app/build/outputs/bundle/release/app-release.aab",
+      "../app/build/outputs/bundle/release/app-release.aab"
+    ]
     
-    unless File.exist?(aab_path)
-      UI.user_error!("AAB file not found at #{aab_path}. Please build the app first.")
+    aab_path = nil
+    possible_paths.each do |path|
+      if File.exist?(path)
+        aab_path = path
+        UI.message("Found AAB file at: #{path}")
+        break
+      end
+    end
+    
+    unless aab_path
+      UI.user_error!("AAB file not found. Searched in: #{possible_paths.join(', ')}")
     end
 
     # Upload to Google Play Console Internal Testing
