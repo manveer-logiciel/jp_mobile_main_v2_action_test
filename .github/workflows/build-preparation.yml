@@ -75,13 +75,26 @@ jobs:
           fi
           
           # Validate password is provided and not empty
-          if [[ -z "$PASSWORD" || ${#PASSWORD} -lt 8 ]]; then
-            echo "❌ ERROR: Password must be at least 8 characters long"
+          if [[ -z "$PASSWORD" ]]; then
+            echo "❌ ERROR: Password input is required"
             exit 1
           fi
           
-          # Store password as a GitHub secret (note: this would typically be done outside the workflow)
-          echo "🔐 Password validated and can be used for secure operations"
+          # Validate password against the stored secret
+          STORED_PASSWORD="${{ secrets.RELEASE_PASSWORD }}"
+          if [[ -z "$STORED_PASSWORD" ]]; then
+            echo "❌ ERROR: RELEASE_PASSWORD secret is not configured"
+            echo "Please set the RELEASE_PASSWORD secret in repository settings"
+            exit 1
+          fi
+          
+          if [[ "$PASSWORD" != "$STORED_PASSWORD" ]]; then
+            echo "❌ ERROR: Invalid password provided"
+            echo "The password does not match the stored RELEASE_PASSWORD secret"
+            exit 1
+          fi
+          
+          echo "🔐 Password verified successfully against stored secret"
           
           echo "✅ Input validation successful"
           
