@@ -275,7 +275,7 @@ jobs:
           cd android
           bundle exec fastlane deploy_internal
         env:
-          GOOGLE_PLAY_KEY_FILE: play-console-service-account.json
+          SUPPLY_JSON_KEY_FILE: play-console-service-account.json
       
       - name: Android Build Summary
         run: |

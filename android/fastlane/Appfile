@@ -1,11 +1,8 @@
 # app_identifier is used for deploying the app via fastlane
 app_identifier("com.jobprogress.app") # The bundle identifier of your app
 
-# Specify the Google Developer account to use
-google_play_key_file("../play-console-service-account.json") # Path to the json file containing Google Play Console service account credentials
-
-# If you're using environment variables, you can specify:
-# ENV["GOOGLE_PLAY_KEY_FILE"] = "../play-console-service-account.json"
-
 # package_name is the same as app_identifier for Android
 package_name("com.jobprogress.app")
+
+# The service account JSON key file will be set via environment variable
+# GOOGLE_PLAY_KEY_FILE in the GitHub Actions workflow
