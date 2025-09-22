@@ -250,13 +250,6 @@ jobs:
             --obfuscate
           echo "::notice title=Android Build::✅ App bundle created successfully"
       
-      - name: Upload App Bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-app-bundle-${{ needs.prepare-and-validate.outputs.release_tag }}
-          path: build/app/outputs/bundle/release/app-release.aab
-          retention-days: 30
-      
       # Deploy to Google Play Console Internal Testing
       - name: Setup Ruby for Fastlane
         uses: ruby/setup-ruby@v1
@@ -276,6 +269,14 @@ jobs:
           bundle exec fastlane deploy_internal
         env:
           SUPPLY_JSON_KEY_FILE: play-console-service-account.json
+      
+      - name: Upload App Bundle (Backup)
+        uses: actions/upload-artifact@v4
+        if: always()  # Upload even if deployment fails
+        with:
+          name: android-app-bundle-${{ needs.prepare-and-validate.outputs.release_tag }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
       
       - name: Android Build Summary
         run: |
