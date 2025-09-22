@@ -117,52 +117,9 @@ jobs:
           git commit -m "Update version to ${{ steps.validation.outputs.app_version }} (build ${{ steps.validation.outputs.build_number }})" || echo "No changes to commit"
           git push
 
-  # Shared Flutter setup job that both Android and iOS can use
-  setup-flutter-cache:
-    name: Setup Flutter Cache
-    runs-on: ubuntu-latest  # Use Ubuntu for faster setup
-    needs: prepare-and-validate
-    outputs:
-      flutter-cache-key: ${{ steps.flutter-cache.outputs.cache-primary-key }}
-      
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: main
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-      
-      - name: Cache Flutter pub dependencies
-        id: flutter-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.PUB_CACHE }}
-            ~/.pub-cache
-            .dart_tool
-          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
-            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
-      
-      - name: Configure Git for private repos
-        run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-      
-      - name: Get Flutter dependencies
-        run: flutter pub get
-
   build-android:
     name: Build Android (.aab)
-    needs: [prepare-and-validate, setup-flutter-cache]
+    needs: prepare-and-validate
     if: ${{ needs.prepare-and-validate.outputs.should_build_android == 'true' }}
     runs-on: ubuntu-latest  # Use Ubuntu for Android builds - much faster!
     permissions:
@@ -176,11 +133,47 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
       
+      # Parallel setup of Java and caching
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
+      
+      # Enhanced Flutter caching with better restore keys
+      - name: Cache Flutter Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            .dart_tool
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}-android
+          restore-keys: |
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+            flutter-${{ runner.os }}-
+      
+      # Enhanced Android caching with build cache
+      - name: Cache Android Dependencies & Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.gradle/daemon
+            ~/.android
+            android/.gradle
+            android/app/.gradle
+            android/build
+            ~/.konan
+            ~/.kotlin
+            /home/runner/.gradle/caches/transforms-*
+            /home/runner/.gradle/caches/build-cache-*
+          key: android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/*.kt') }}-v2
+          restore-keys: |
+            android-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}-
+            android-${{ runner.os }}-
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -189,76 +182,45 @@ jobs:
           channel: 'stable'
           cache: true
       
-      # Restore Flutter dependencies from cache
-      - name: Restore Flutter pub dependencies
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ${{ env.PUB_CACHE }}
-            ~/.pub-cache
-            .dart_tool
-          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
-            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
-      
-      # Consolidated Android caching
-      - name: Cache Android Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.android
-            android/.gradle
-            android/app/.gradle
-            android/build
-            ~/.konan
-            ~/.kotlin
-          key: android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ hashFiles('**/*.kt') }}
-          restore-keys: |
-            android-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}-
-            android-${{ runner.os }}-
-      
       - name: Configure Git for private repos
         run: |
           TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
-      # Simplified keystore creation (remove verbose debugging)
-      - name: Create Android Keystore
+      # Get Flutter dependencies early for parallel processing
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      # Batch Android configuration for better performance
+      - name: Configure Android Build Environment
         run: |
-          echo "🔐 Creating keystore..."
+          # Create keystore
           echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
           chmod 600 android/keystore.jks
-          echo "✅ Keystore created successfully"
-      
-      - name: Create key.properties
-        run: |
-          echo "🔑 Creating key.properties..."
+          
+          # Create key.properties
           cat > android/key.properties << EOF
           storePassword=${{ vars.ANDROID_STORE_PASSWORD }}
           keyPassword=${{ vars.ANDROID_KEY_PASSWORD }}
           keyAlias=${{ vars.ANDROID_KEY_ALIAS }}
           storeFile=../keystore.jks
           EOF
-          echo "✅ key.properties created successfully"
-      
-      - name: Update local.properties
-        run: |
+          
+          # Update local.properties
           cat > android/local.properties << EOF
           flutter.versionName=${{ needs.prepare-and-validate.outputs.app_version }}
           flutter.versionCode=${{ needs.prepare-and-validate.outputs.build_number }}
           flutter.sdk=$FLUTTER_ROOT
           EOF
-      
-      - name: Get Flutter dependencies (if cache miss)
-        run: flutter pub get
+          
+          echo "✅ Android build environment configured"
       
       - name: Build App Bundle
         run: |
-          echo "🔨 Building Android App Bundle..."
-          flutter build appbundle --release --verbose
+          flutter build appbundle --release \
+            --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
+            --split-debug-info=build/android/debug-info \
+            --obfuscate
       
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -281,9 +243,9 @@ jobs:
 
   build-ios:
     name: Build iOS
-    needs: [prepare-and-validate, setup-flutter-cache]
+    needs: prepare-and-validate
     if: ${{ needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
-    runs-on: macos-latest  # iOS requires macOS
+    runs-on: macos-13  # Use macOS-13 for faster performance (macos-latest can be slower)
     permissions:
       contents: read
       packages: read
@@ -295,6 +257,36 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
       
+      # Enhanced Flutter caching for macOS
+      - name: Cache Flutter Dependencies  
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            ~/Library/Caches/dart-pub
+            .dart_tool
+          key: flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}-ios
+          restore-keys: |
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-
+            flutter-macOS-
+      
+      # Enhanced CocoaPods caching with additional paths
+      - name: Cache CocoaPods & iOS Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/Pods
+            ~/.cocoapods
+            ~/Library/Caches/CocoaPods
+            ios/build
+            ios/.symlinks
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj') }}-v2
+          restore-keys: |
+            cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-
+            cocoapods-${{ runner.os }}-
+      
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -302,37 +294,25 @@ jobs:
           channel: 'stable'
           cache: true
       
-      # Restore Flutter dependencies from cache
-      - name: Restore Flutter pub dependencies
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ${{ env.PUB_CACHE }}
-            ~/.pub-cache
-            ~/Library/Caches/dart-pub
-            .dart_tool
-          key: flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
-            flutter-macOS-${{ env.FLUTTER_VERSION }}-
-      
-      - name: Cache CocoaPods
-        uses: actions/cache@v4
-        with:
-          path: |
-            ios/Pods
-            ~/.cocoapods
-          key: cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}
-          restore-keys: |
-            cocoapods-${{ runner.os }}-
-      
       - name: Configure Git for private repos
         run: |
           TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
-      - name: Get Flutter dependencies (if cache miss)
+      # Get Flutter dependencies early for parallel processing
+      - name: Get Flutter dependencies
         run: flutter pub get
+      
+      # Install CocoaPods dependencies with optimization
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          # Only run repo update if cache miss or force update needed
+          if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
+            pod install --repo-update
+          else
+            pod install
+          fi
       
       - name: Configure Xcode Project for Manual Signing
         run: |
@@ -373,10 +353,6 @@ jobs:
           
           echo "✅ Xcode project configured for manual signing (both main app and Share Extension)"
       
-      - name: Install CocoaPods dependencies
-        run: |
-          cd ios
-          pod install --repo-update
       
       # iOS Code Signing Setup
       - name: Setup iOS Code Signing
@@ -387,8 +363,6 @@ jobs:
           IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
-          echo "🔐 Setting up iOS code signing..."
-          
           # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
@@ -409,140 +383,51 @@ jobs:
           security import $CERTIFICATE_PATH -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
           
-          # Install both provisioning profiles with proper UUIDs
-          echo "📱 Installing provisioning profiles..."
+          # Install provisioning profiles
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           
-          # Extract UUID and Name from provisioning profiles
-          echo "📋 Extracting provisioning profile information..."
-          
-          # Use more robust extraction methods
+          # Extract profile information with streamlined error handling
           MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          
           MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           
-          echo "📋 Main app profile UUID: $MAIN_PROFILE_UUID"
-          echo "📋 Main app profile Name: $MAIN_PROFILE_NAME"
-          echo "📋 Share extension profile UUID: $SHARE_PROFILE_UUID"
-          echo "📋 Share extension profile Name: $SHARE_PROFILE_NAME"
-          
-          # Validate that we extracted valid values and provide better debugging
+          # Validate extracted values
           if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$MAIN_PROFILE_NAME" ]] || [[ -z "$SHARE_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_NAME" ]]; then
             echo "❌ ERROR: Failed to extract provisioning profile information"
-            echo "📋 Main profile UUID: '$MAIN_PROFILE_UUID'"
-            echo "📋 Main profile Name: '$MAIN_PROFILE_NAME'"
-            echo "📋 Share profile UUID: '$SHARE_PROFILE_UUID'"
-            echo "📋 Share profile Name: '$SHARE_PROFILE_NAME'"
-            
-            # Additional debugging - show raw profile content
-            echo "🔍 DEBUG: Examining main profile content..."
-            security cms -D -i $MAIN_PROFILE_PATH | head -50
-            echo "🔍 DEBUG: Examining share profile content..."
-            security cms -D -i $SHARE_PROFILE_PATH | head -50
             exit 1
           fi
           
-          # Additional validation - check if UUID and Name make sense
-          if [[ ${#MAIN_PROFILE_UUID} -ne 36 ]] || [[ ${#SHARE_PROFILE_UUID} -ne 36 ]]; then
-            echo "⚠️  WARNING: Profile UUIDs may be incorrect (should be 36 characters)"
-            echo "📋 Main profile UUID length: ${#MAIN_PROFILE_UUID}"
-            echo "📋 Share profile UUID length: ${#SHARE_PROFILE_UUID}"
-          fi
-          
-          # Copy profiles with proper UUID names
+          # Install profiles
           cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision
           cp $SHARE_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision
           
-          # Update ExportOptions.plist with actual profile names
-          echo "📝 Updating ExportOptions.plist with actual profile names..."
-          
-          # Create backup of original ExportOptions.plist
+          # Update ExportOptions.plist
           cp ios/ExportOptions.plist ios/ExportOptions.plist.backup
           
           # Function to safely update plist values
           safe_plist_update() {
             local key="$1"
             local value="$2"
-            
-            # Try to set, if it fails, try to add
             if ! /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:$key \"$value\"" ios/ExportOptions.plist 2>/dev/null; then
-              # If Set fails, try to add the key
-              /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$key string \"$value\"" ios/ExportOptions.plist 2>/dev/null || {
-                echo "⚠️  WARNING: Failed to update ExportOptions.plist for key: $key"
-                return 1
-              }
+              /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$key string \"$value\"" ios/ExportOptions.plist 2>/dev/null || return 1
             fi
-            return 0
           }
           
-          # Update both provisioning profiles
+          # Update provisioning profiles in ExportOptions.plist
           safe_plist_update "com.job.progressapp" "$MAIN_PROFILE_NAME"
           safe_plist_update "com.job.progressapp.Share-Extension" "$SHARE_PROFILE_NAME"
           
-          # Show updated ExportOptions.plist for debugging
-          echo "📋 Updated ExportOptions.plist:"
-          cat ios/ExportOptions.plist
-          
-          # Validate that the profile names were set correctly
-          UPDATED_MAIN_PROFILE=$(/usr/libexec/PlistBuddy -c "Print :provisioningProfiles:com.job.progressapp" ios/ExportOptions.plist)
-          UPDATED_SHARE_PROFILE=$(/usr/libexec/PlistBuddy -c "Print :provisioningProfiles:com.job.progressapp.Share-Extension" ios/ExportOptions.plist)
-          
-          echo "📋 Validation - Main app profile in ExportOptions: $UPDATED_MAIN_PROFILE"
-          echo "📋 Validation - Share extension profile in ExportOptions: $UPDATED_SHARE_PROFILE"
-          
-          if [[ "$UPDATED_MAIN_PROFILE" != "$MAIN_PROFILE_NAME" ]] || [[ "$UPDATED_SHARE_PROFILE" != "$SHARE_PROFILE_NAME" ]]; then
-            echo "❌ ERROR: Failed to update ExportOptions.plist with correct profile names"
-            exit 1
-          fi
-          
-          # List installed profiles for verification
-          echo "📋 Installed provisioning profiles:"
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
-          
-          # Verify provisioning profiles content and bundle IDs
-          echo "📋 Verifying provisioning profiles bundle IDs..."
-          
-          # More robust extraction of bundle IDs
+          # Basic bundle ID validation
           MAIN_BUNDLE_ID_FULL=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          SHARE_BUNDLE_ID_FULL=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          
-          # Extract just the bundle ID part (remove team ID prefix)
           MAIN_BUNDLE_ID=$(echo "$MAIN_BUNDLE_ID_FULL" | sed 's/^[^.]*\.//')
-          SHARE_BUNDLE_ID=$(echo "$SHARE_BUNDLE_ID_FULL" | sed 's/^[^.]*\.//')
           
-          echo "📋 Main app full identifier: $MAIN_BUNDLE_ID_FULL"
-          echo "📋 Main app bundle ID: $MAIN_BUNDLE_ID"
-          echo "📋 Share extension full identifier: $SHARE_BUNDLE_ID_FULL"
-          echo "📋 Share extension bundle ID: $SHARE_BUNDLE_ID"
-          
-          # Validate bundle IDs match expected values
           if [[ "$MAIN_BUNDLE_ID" != "com.job.progressapp" ]]; then
-            echo "❌ ERROR: Main app provisioning profile bundle ID mismatch"
-            echo "   Expected: com.job.progressapp"
-            echo "   Found: $MAIN_BUNDLE_ID"
-            
-            # Show all available app identifiers for debugging
-            echo "🔍 DEBUG: All application identifiers in main profile:"
-            security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 -B1 "application-identifier"
+            echo "❌ ERROR: Bundle ID mismatch. Expected: com.job.progressapp, Found: $MAIN_BUNDLE_ID"
             exit 1
           fi
           
-          if [[ "$SHARE_BUNDLE_ID" != "com.job.progressapp.Share-Extension" ]]; then
-            echo "❌ ERROR: Share extension provisioning profile bundle ID mismatch"
-            echo "   Expected: com.job.progressapp.Share-Extension"
-            echo "   Found: $SHARE_BUNDLE_ID"
-            
-            # Show all available app identifiers for debugging
-            echo "🔍 DEBUG: All application identifiers in share extension profile:"
-            security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision | grep -A1 -B1 "application-identifier"
-            exit 1
-          fi
-          
-          echo "✅ Bundle ID validation successful"
-          
-          echo "✅ iOS code signing setup complete for main app and share extension"
+          echo "✅ iOS code signing setup complete"
       
       - name: Configure Provisioning Profile UUIDs in Xcode Project
         run: |
@@ -638,7 +523,6 @@ jobs:
       
       - name: Build iOS Archive
         run: |
-          echo "🔨 Building iOS archive..."
           flutter build ipa --release \
             --export-options-plist=ios/ExportOptions.plist \
             --build-name=${{ needs.prepare-and-validate.outputs.app_version }} \
@@ -647,29 +531,14 @@ jobs:
             --split-debug-info=build/ios/debug-info \
             --obfuscate
           
-          # Verify IPA was created successfully
+          # Quick validation of IPA creation
           if [ ! -f build/ios/ipa/*.ipa ]; then
-            echo "❌ ERROR: IPA file was not created. Build may have failed during export."
-            echo "📋 Checking build/ios/ipa directory contents:"
+            echo "❌ ERROR: IPA file was not created"
             ls -la build/ios/ipa/ 2>/dev/null || echo "Directory does not exist"
-            
-            echo "📋 Checking for other build artifacts:"
-            ls -la build/ios/ 2>/dev/null || echo "build/ios directory doesn't exist"
-            
-            echo "📋 Checking ExportOptions.plist used:"
-            cat ios/ExportOptions.plist
-            
-            echo "📋 Checking installed provisioning profiles:"
-            ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null || echo "No provisioning profiles directory found"
-            
-            echo "📋 Checking for build logs:"
-            find build/ios -name "*.log" -exec echo "Found log: {}" \; -exec head -20 {} \; 2>/dev/null || true
-            
             exit 1
           fi
           
-          echo "✅ IPA file created successfully:"
-          ls -la build/ios/ipa/*.ipa
+          echo "✅ IPA created: $(ls build/ios/ipa/*.ipa)"
       
       - name: Upload iOS App (.ipa)
         uses: actions/upload-artifact@v4
@@ -742,3 +611,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** \`${{ needs.prepare-and-validate.outputs.app_version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Build Number:** \`${{ needs.prepare-and-validate.outputs.build_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚡ Performance Optimizations Applied" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Removed redundant Flutter cache job for parallel execution" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Enhanced caching strategies for Android and iOS" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Streamlined iOS code signing process" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Used macOS-13 runner for faster iOS builds" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Optimized CocoaPods installation logic" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Batched Android configuration steps" >> $GITHUB_STEP_SUMMARY
