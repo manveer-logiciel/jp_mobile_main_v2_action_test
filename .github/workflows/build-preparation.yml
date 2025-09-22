@@ -250,16 +250,6 @@ jobs:
             --obfuscate
           echo "::notice title=Android Build::✅ App bundle created successfully"
           
-          # Verify AAB was created
-          echo "=== Verifying AAB file creation ==="
-          if [ -f "build/app/outputs/bundle/release/app-release.aab" ]; then
-            echo "✅ AAB file found at build/app/outputs/bundle/release/app-release.aab"
-            ls -la build/app/outputs/bundle/release/app-release.aab
-          else
-            echo "❌ AAB file NOT found at expected location"
-            echo "=== Searching for AAB files ==="
-            find . -name "*.aab" -type f 2>/dev/null || echo "No AAB files found anywhere"
-          fi
       
       # Deploy to Google Play Console Internal Testing
       - name: Setup Ruby for Fastlane
@@ -274,25 +264,9 @@ jobs:
           echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
           chmod 600 android/play-console-service-account.json
       
-      - name: Debug - List files to find AAB location
-        run: |
-          echo "=== Current directory ==="
-          pwd
-          echo "=== Listing all AAB files ==="
-          find . -name "*.aab" -type f 2>/dev/null || echo "No AAB files found"
-          echo "=== Listing build directory structure ==="
-          ls -la build/ 2>/dev/null || echo "No build directory"
-          ls -la build/app/ 2>/dev/null || echo "No build/app directory"
-          ls -la build/app/outputs/ 2>/dev/null || echo "No build/app/outputs directory"
-          ls -la build/app/outputs/bundle/ 2>/dev/null || echo "No build/app/outputs/bundle directory"
-          ls -la build/app/outputs/bundle/release/ 2>/dev/null || echo "No build/app/outputs/bundle/release directory"
-      
       - name: Deploy to Google Play Console Internal Testing
         run: |
-          # Set the absolute path to the AAB file for Fastlane
           export AAB_FILE_PATH="$(pwd)/build/app/outputs/bundle/release/app-release.aab"
-          echo "AAB file path: $AAB_FILE_PATH"
-          ls -la "$AAB_FILE_PATH"
           cd android
           bundle exec fastlane deploy_internal
         env:

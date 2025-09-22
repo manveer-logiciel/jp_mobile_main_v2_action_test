@@ -21,14 +21,10 @@ platform :android do
     # Get AAB file path from environment variable or use default relative path
     aab_path = ENV['AAB_FILE_PATH'] || "../build/app/outputs/bundle/release/app-release.aab"
     
-    UI.message("Looking for AAB file at: #{aab_path}")
-    
     # Verify AAB file exists
     unless File.exist?(aab_path)
       UI.user_error!("AAB file not found at #{aab_path}")
     end
-    
-    UI.message("✅ Found AAB file at: #{aab_path}")
 
     # Upload to Google Play Console Internal Testing
     supply(
