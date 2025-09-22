@@ -3,12 +3,16 @@ name: Integration Build Preparation
 on:
   workflow_dispatch:
     inputs:
-      app_version:
-        description: 'App Version (e.g., 3.37.2)'
+      release_tag:
+        description: 'Release Tag (e.g., v3.37.2)'
         required: true
         type: string
-      build_number:
-        description: 'Build Number (e.g., 303700200)'
+      verify_release_tag:
+        description: 'Verify Release Tag (must match above)'
+        required: true
+        type: string
+      password:
+        description: 'Password for secure operations'
         required: true
         type: string
       build_platform:
@@ -32,8 +36,7 @@ jobs:
     permissions:
       contents: write
     outputs:
-      app_version: ${{ steps.validation.outputs.app_version }}
-      build_number: ${{ steps.validation.outputs.build_number }}
+      release_tag: ${{ steps.validation.outputs.release_tag }}
       build_platform: ${{ steps.validation.outputs.build_platform }}
       should_build_android: ${{ steps.validation.outputs.should_build_android }}
       should_build_ios: ${{ steps.validation.outputs.should_build_ios }}
@@ -47,32 +50,43 @@ jobs:
       - name: Validate Inputs & Set Outputs
         id: validation
         run: |
-          VERSION="${{ inputs.app_version }}"
-          BUILD_NUMBER="${{ inputs.build_number }}"
+          RELEASE_TAG="${{ inputs.release_tag }}"
+          VERIFY_RELEASE_TAG="${{ inputs.verify_release_tag }}"
+          PASSWORD="${{ inputs.password }}"
           PLATFORM="${{ inputs.build_platform }}"
           
           echo "🔍 Validating inputs..."
-          echo "📋 Version: $VERSION"
-          echo "🔢 Build Number: $BUILD_NUMBER"
+          echo "🏷️ Release Tag: $RELEASE_TAG"
+          echo "🔐 Password: [REDACTED]"
           echo "🏗️ Platform: $PLATFORM"
           
-          # Validate version format (x.y.z where x, y, z are numbers)
-          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ ERROR: Invalid version format. Expected format: x.y.z (e.g., 3.37.2)"
+          # Validate release tags match
+          if [[ "$RELEASE_TAG" != "$VERIFY_RELEASE_TAG" ]]; then
+            echo "❌ ERROR: Release tag and verify release tag do not match"
+            echo "Release Tag: '$RELEASE_TAG'"
+            echo "Verify Release Tag: '$VERIFY_RELEASE_TAG'"
             exit 1
           fi
           
-          # Validate build number is numeric
-          if [[ ! $BUILD_NUMBER =~ ^[0-9]+$ ]]; then
-            echo "❌ ERROR: Build number must be numeric"
+          # Validate release tag format (should start with 'v' and have semantic version)
+          if [[ ! $RELEASE_TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ ERROR: Invalid release tag format. Expected format: vx.y.z (e.g., v3.37.2)"
             exit 1
           fi
+          
+          # Validate password is provided and not empty
+          if [[ -z "$PASSWORD" || ${#PASSWORD} -lt 8 ]]; then
+            echo "❌ ERROR: Password must be at least 8 characters long"
+            exit 1
+          fi
+          
+          # Store password as a GitHub secret (note: this would typically be done outside the workflow)
+          echo "🔐 Password validated and can be used for secure operations"
           
           echo "✅ Input validation successful"
           
           # Set outputs for next steps
-          echo "app_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
           
           # Set conditional build flags
@@ -88,38 +102,9 @@ jobs:
             echo "should_build_ios=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Update Version Files
-        run: |
-          VERSION="${{ steps.validation.outputs.app_version }}"
-          BUILD_NUMBER="${{ steps.validation.outputs.build_number }}"
-          
-          echo "🔄 Updating version files..."
-          
-          # Update pubspec.yaml
-          echo "📝 Updating pubspec.yaml: $VERSION+$BUILD_NUMBER"
-          sed -i "s/^version: .*/version: $VERSION+$BUILD_NUMBER/" pubspec.yaml
-          
-          # Update global.dart
-          echo "📝 Updating lib/common/libraries/global.dart: $VERSION"
-          sed -i "s/String appVersion = '[^']*';/String appVersion = '$VERSION';/" lib/common/libraries/global.dart
-          
-          # Update iOS marketing version
-          echo "📝 Updating iOS marketing version: $VERSION"
-          sed -i "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $VERSION/" ios/Runner.xcodeproj/project.pbxproj
-          
-          echo "✅ Version files updated successfully"
-      
-      - name: Commit Version Updates
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add pubspec.yaml lib/common/libraries/global.dart ios/Runner.xcodeproj/project.pbxproj
-          git commit -m "Update version to ${{ steps.validation.outputs.app_version }} (build ${{ steps.validation.outputs.build_number }})" || echo "No changes to commit"
-          git push
-      
       - name: Validation Complete
         run: |
-          echo "::notice title=Preparation Complete::✅ Build validation and version updates completed successfully"
+          echo "::notice title=Preparation Complete::✅ Build validation completed successfully"
 
   build-android:
     name: Build Android (.aab)
@@ -210,10 +195,18 @@ jobs:
           storeFile=../keystore.jks
           EOF
           
+          # Extract version info from release tag (remove 'v' prefix)
+          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
+          VERSION_NAME="${RELEASE_TAG#v}"  # Remove 'v' prefix
+          
+          # Convert version to build number (e.g., v3.37.2 -> 303700200)
+          IFS='.' read -ra VERSION_PARTS <<< "$VERSION_NAME"
+          VERSION_CODE="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
+          
           # Update local.properties
           cat > android/local.properties << EOF
-          flutter.versionName=${{ needs.prepare-and-validate.outputs.app_version }}
-          flutter.versionCode=${{ needs.prepare-and-validate.outputs.build_number }}
+          flutter.versionName=$VERSION_NAME
+          flutter.versionCode=$VERSION_CODE
           flutter.sdk=$FLUTTER_ROOT
           EOF
           
@@ -231,7 +224,7 @@ jobs:
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
         with:
-          name: android-app-bundle-${{ needs.prepare-and-validate.outputs.app_version }}-${{ needs.prepare-and-validate.outputs.build_number }}
+          name: android-app-bundle-${{ needs.prepare-and-validate.outputs.release_tag }}
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
       
@@ -241,8 +234,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔧 Build Environment" >> $GITHUB_STEP_SUMMARY
@@ -518,8 +510,13 @@ jobs:
       
       - name: Update iOS Version
         run: |
-          VERSION="${{ needs.prepare-and-validate.outputs.app_version }}"
-          BUILD_NUMBER="${{ needs.prepare-and-validate.outputs.build_number }}"
+          # Extract version info from release tag (remove 'v' prefix)
+          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
+          VERSION="${RELEASE_TAG#v}"  # Remove 'v' prefix
+          
+          # Convert version to build number (e.g., v3.37.2 -> 303700200)
+          IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+          BUILD_NUMBER="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
           
           echo "📝 Updating iOS version to $VERSION ($BUILD_NUMBER)"
           
@@ -550,11 +547,19 @@ jobs:
       
       - name: Build iOS Archive
         run: |
+          # Extract version info from release tag (remove 'v' prefix)
+          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
+          VERSION="${RELEASE_TAG#v}"  # Remove 'v' prefix
+          
+          # Convert version to build number (e.g., v3.37.2 -> 303700200)
+          IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+          BUILD_NUMBER="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
+          
           echo "::notice title=iOS Build::🏗️ Building iOS archive (.ipa)..."
           flutter build ipa --release \
             --export-options-plist=ios/ExportOptions.plist \
-            --build-name=${{ needs.prepare-and-validate.outputs.app_version }} \
-            --build-number=${{ needs.prepare-and-validate.outputs.build_number }} \
+            --build-name="$VERSION" \
+            --build-number="$BUILD_NUMBER" \
             --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
             --split-debug-info=build/ios/debug-info \
             --obfuscate
@@ -579,7 +584,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: success() && hashFiles('build/ios/ipa/*.ipa') != ''
         with:
-          name: ios-app-${{ needs.prepare-and-validate.outputs.app_version }}-${{ needs.prepare-and-validate.outputs.build_number }}
+          name: ios-app-${{ needs.prepare-and-validate.outputs.release_tag }}
           path: build/ios/ipa/*.ipa
           retention-days: 30
       
@@ -595,8 +600,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Bundle ID** | \`$(plutil -extract CFBundleIdentifier xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || echo 'com.job.progressapp')\` |" >> $GITHUB_STEP_SUMMARY
           
           if [ -f build/ios/ipa/*.ipa ]; then
@@ -703,8 +707,7 @@ jobs:
           echo "### 📋 Build Details" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **App Version** | \`${{ needs.prepare-and-validate.outputs.app_version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Build Number** | \`${{ needs.prepare-and-validate.outputs.build_number }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Platform** | \`${{ needs.prepare-and-validate.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
