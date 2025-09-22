@@ -34,6 +34,8 @@ platform :android do
     supply(
       track: 'internal',
       aab: aab_path,
+      json_key_file: ENV['SUPPLY_JSON_KEY_FILE'] || 'play-console-service-account.json',
+      package_name: 'com.jobprogress.app',
       skip_upload_apk: true,
       skip_upload_metadata: true,
       skip_upload_images: true,
@@ -58,6 +60,8 @@ platform :android do
     supply(
       track: 'production',
       aab: aab_path,
+      json_key_file: ENV['SUPPLY_JSON_KEY_FILE'] || 'play-console-service-account.json',
+      package_name: 'com.jobprogress.app',
       skip_upload_apk: true,
       skip_upload_metadata: true,
       skip_upload_images: true,
@@ -81,6 +85,8 @@ platform :android do
     supply(
       track: 'beta',
       aab: aab_path,
+      json_key_file: ENV['SUPPLY_JSON_KEY_FILE'] || 'play-console-service-account.json',
+      package_name: 'com.jobprogress.app',
       skip_upload_apk: true,
       skip_upload_metadata: true,
       skip_upload_images: true,
@@ -96,6 +102,8 @@ platform :android do
     supply(
       track: 'internal',
       track_promote_to: 'beta',
+      json_key_file: ENV['SUPPLY_JSON_KEY_FILE'] || 'play-console-service-account.json',
+      package_name: 'com.jobprogress.app',
       skip_upload_aab: true,
       skip_upload_apk: true,
       skip_upload_metadata: true,
@@ -111,6 +119,8 @@ platform :android do
     supply(
       track: 'beta',
       track_promote_to: 'production',
+      json_key_file: ENV['SUPPLY_JSON_KEY_FILE'] || 'play-console-service-account.json',
+      package_name: 'com.jobprogress.app',
       skip_upload_aab: true,
       skip_upload_apk: true,
       skip_upload_metadata: true,
