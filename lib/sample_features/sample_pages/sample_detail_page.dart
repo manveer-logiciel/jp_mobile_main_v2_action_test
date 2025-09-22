@@ -163,7 +163,7 @@ class SampleDetailPage extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(description),
-        trailing: Icon(
+        trailing: const Icon(
           Icons.check_circle,
           color: Colors.green,
         ),

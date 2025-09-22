@@ -144,8 +144,8 @@ class SampleListTile extends StatelessWidget {
   }
 
   Widget _buildOverdueChip() {
-    return Chip(
-      label: const Text(
+    return const Chip(
+      label: Text(
         'Overdue',
         style: TextStyle(fontSize: 12, color: Colors.white),
       ),
