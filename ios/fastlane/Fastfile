@@ -57,10 +57,8 @@ platform :ios do
       UI.user_error!("IPA file not found at #{ipa_path}")
     end
 
-    # Create API key file for authentication
-    api_key_file = "/tmp/AuthKey_#{api_key_id}.p8"
     # Decode base64 content if it's encoded
-    decoded_content = if api_key_content.match?(/^[A-Za-z0-9+\/=]+$/) && !api_key_content.start_with?('-----BEGIN')
+    decoded_key_content = if api_key_content.match?(/^[A-Za-z0-9+\/=]+$/) && !api_key_content.start_with?('-----BEGIN')
       require 'base64'
       UI.message("🔓 Decoding base64 API key content...")
       Base64.decode64(api_key_content)
@@ -68,22 +66,23 @@ platform :ios do
       UI.message("📝 Using API key content as-is (already in PEM format)")
       api_key_content
     end
-    File.write(api_key_file, decoded_content)
     
-    begin
-      # Upload to TestFlight
-      upload_to_testflight(
-        ipa: ipa_path,
-        skip_submission: true,  # Don't submit for review automatically
-        skip_waiting_for_build_processing: false,  # Wait for processing to complete
-        app_identifier: 'com.job.progressapp',
-        team_id: ENV['APPLE_TEAM_ID'],
-        api_key_path: api_key_file
-      )
-    ensure
-      # Clean up temporary API key file
-      File.delete(api_key_file) if File.exist?(api_key_file)
-    end
+    # Create App Store Connect API key
+    api_key = app_store_connect_api_key(
+      key_id: api_key_id,
+      issuer_id: api_issuer_id,
+      key_content: decoded_key_content
+    )
+    
+    # Upload to TestFlight
+    upload_to_testflight(
+      ipa: ipa_path,
+      skip_submission: true,  # Don't submit for review automatically
+      skip_waiting_for_build_processing: false,  # Wait for processing to complete
+      app_identifier: 'com.job.progressapp',
+      team_id: ENV['APPLE_TEAM_ID'],
+      api_key: api_key
+    )
 
     UI.success("Successfully uploaded IPA to TestFlight! ✈️")
     UI.message("The build will be available for testing once it finishes processing.")
@@ -125,10 +124,8 @@ platform :ios do
       UI.user_error!("IPA file not found at #{ipa_path}")
     end
 
-    # Create API key file for authentication
-    api_key_file = "/tmp/AuthKey_#{api_key_id}.p8"
     # Decode base64 content if it's encoded
-    decoded_content = if api_key_content.match?(/^[A-Za-z0-9+\/=]+$/) && !api_key_content.start_with?('-----BEGIN')
+    decoded_key_content = if api_key_content.match?(/^[A-Za-z0-9+\/=]+$/) && !api_key_content.start_with?('-----BEGIN')
       require 'base64'
       UI.message("🔓 Decoding base64 API key content...")
       Base64.decode64(api_key_content)
@@ -136,28 +133,29 @@ platform :ios do
       UI.message("📝 Using API key content as-is (already in PEM format)")
       api_key_content
     end
-    File.write(api_key_file, decoded_content)
     
-    begin
-      # Upload to TestFlight and submit for review
-      upload_to_testflight(
-        ipa: ipa_path,
-        skip_submission: false,  # Submit for review
-        skip_waiting_for_build_processing: false,
-        app_identifier: 'com.job.progressapp',
-        team_id: ENV['APPLE_TEAM_ID'],
-        api_key_path: api_key_file,
-        beta_app_review_info: {
-          contact_email: ENV['TESTFLIGHT_CONTACT_EMAIL'],
-          contact_first_name: ENV['TESTFLIGHT_CONTACT_FIRST_NAME'],
-          contact_last_name: ENV['TESTFLIGHT_CONTACT_LAST_NAME'],
-          contact_phone: ENV['TESTFLIGHT_CONTACT_PHONE']
-        }
-      )
-    ensure
-      # Clean up temporary API key file
-      File.delete(api_key_file) if File.exist?(api_key_file)
-    end
+    # Create App Store Connect API key
+    api_key = app_store_connect_api_key(
+      key_id: api_key_id,
+      issuer_id: api_issuer_id,
+      key_content: decoded_key_content
+    )
+    
+    # Upload to TestFlight and submit for review
+    upload_to_testflight(
+      ipa: ipa_path,
+      skip_submission: false,  # Submit for review
+      skip_waiting_for_build_processing: false,
+      app_identifier: 'com.job.progressapp',
+      team_id: ENV['APPLE_TEAM_ID'],
+      api_key: api_key,
+      beta_app_review_info: {
+        contact_email: ENV['TESTFLIGHT_CONTACT_EMAIL'],
+        contact_first_name: ENV['TESTFLIGHT_CONTACT_FIRST_NAME'],
+        contact_last_name: ENV['TESTFLIGHT_CONTACT_LAST_NAME'],
+        contact_phone: ENV['TESTFLIGHT_CONTACT_PHONE']
+      }
+    )
 
     UI.success("Successfully uploaded IPA to TestFlight and submitted for review! 🚀")
   end
