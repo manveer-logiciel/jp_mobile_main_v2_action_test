@@ -670,12 +670,14 @@ jobs:
         run: |
           export IPA_FILE_PATH="$(pwd)/build/ios/ipa/$(ls build/ios/ipa/*.ipa | head -1 | xargs basename)"
           cd ios
+          # Set API key environment variables for fastlane
+          export FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD=""
+          export APP_STORE_CONNECT_API_KEY_ID="${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}"
+          export APP_STORE_CONNECT_API_ISSUER_ID="${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}"
           bundle exec fastlane deploy_testflight
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
       
       - name: Upload iOS App (.ipa) - Backup
