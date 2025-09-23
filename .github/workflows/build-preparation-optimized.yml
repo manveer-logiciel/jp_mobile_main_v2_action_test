@@ -1,3 +1,29 @@
+# ============================================================================
+# OPTIMIZED BUILD PREPARATION WORKFLOW - FRAGMENTED ARCHITECTURE
+# ============================================================================
+# 
+# This workflow addresses the challenge of heavy, monolithic builds where
+# failure of any step requires restarting the entire job. The fragmented
+# architecture allows granular recovery and parallel execution.
+#
+# EDGE CASES ADDRESSED:
+# 1. Private repository authentication failures
+# 2. Network connectivity issues with retry logic
+# 3. Missing artifacts with fallback mechanisms
+# 4. Secret validation and error reporting
+# 5. Build failures with automatic retries
+# 6. Deployment failures with independent retry logic
+# 7. Platform-specific environment setup issues
+#
+# REQUIRED SECRETS:
+# - RELEASE_PASSWORD: Password for secure operations
+# - PRIVATE_REPO_TOKEN: Token with access to private repositories
+# - Android secrets: ANDROID_KEYSTORE_BASE64, ANDROID_STORE_PASSWORD, etc.
+# - iOS secrets: IOS_DISTRIBUTION_CERTIFICATE_BASE64, APPLE_ID, etc.
+# - Deployment secrets: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, APP_STORE_CONNECT_API_KEY, etc.
+#
+# ============================================================================
+
 name: Optimized Build Preparation (Fragmented)
 
 on:
@@ -82,8 +108,22 @@ jobs:
           fi
           
           # Validate password
-          if [[ -z "$PASSWORD" ]] || [[ "$PASSWORD" != "${{ secrets.RELEASE_PASSWORD }}" ]]; then
-            echo "❌ ERROR: Invalid password"
+          if [[ -z "$PASSWORD" ]]; then
+            echo "❌ ERROR: Password input is required"
+            exit 1
+          fi
+          
+          # Validate password against the stored secret
+          STORED_PASSWORD="${{ secrets.RELEASE_PASSWORD }}"
+          if [[ -z "$STORED_PASSWORD" ]]; then
+            echo "❌ ERROR: RELEASE_PASSWORD secret is not configured"
+            echo "Please set the RELEASE_PASSWORD secret in repository settings"
+            exit 1
+          fi
+          
+          if [[ "$PASSWORD" != "$STORED_PASSWORD" ]]; then
+            echo "❌ ERROR: Invalid password provided"
+            echo "The password does not match the stored RELEASE_PASSWORD secret"
             exit 1
           fi
           
@@ -115,6 +155,17 @@ jobs:
           echo "pubspec_hash=${PUBSPEC_HASH}" >> $GITHUB_OUTPUT
           echo "flutter_cache_key=${FLUTTER_CACHE_KEY}" >> $GITHUB_OUTPUT
 
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          if [[ -z "$TOKEN" ]]; then
+            echo "❌ ERROR: PRIVATE_REPO_TOKEN is not configured"
+            echo "Please set PRIVATE_REPO_TOKEN secret with access to private repositories"
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          echo "✅ Git configured for private repository access"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -122,13 +173,29 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Configure Git for private repos
+      - name: Get Flutter dependencies (with retry)
         run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-
-      - name: Get Flutter dependencies
-        run: flutter pub get
+          echo "📦 Installing Flutter dependencies..."
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt/3"
+            if flutter pub get; then
+              echo "✅ Flutter dependencies installed successfully on attempt $attempt"
+              break
+            else
+              echo "❌ Dependency installation attempt $attempt failed"
+              if [ $attempt -eq 3 ]; then
+                echo "❌ All dependency installation attempts failed"
+                echo "Common causes:"
+                echo "1. Private repository access token is invalid or expired"
+                echo "2. Private repository does not exist or access denied"
+                echo "3. Network connectivity issues"
+                echo "4. Dependency version conflicts"
+                exit 1
+              fi
+              echo "Retrying in 10 seconds..."
+              sleep 10
+            fi
+          done
 
       - name: Cache Flutter Dependencies (Shared)
         uses: actions/cache@v4
@@ -345,12 +412,33 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: "*-${{ needs.shared-setup.outputs.release_tag }}"
+        continue-on-error: true
+
+      - name: Verify Artifacts Downloaded
+        run: |
+          echo "🔍 Verifying downloaded artifacts..."
+          if [ ! -d "flutter-dependencies-${{ needs.shared-setup.outputs.release_tag }}" ]; then
+            echo "⚠️  Flutter dependencies artifact not found, will recreate during Flutter setup"
+          else
+            echo "✅ Flutter artifacts verified"
+          fi
+          
+          if [ ! -d "android-config-${{ needs.shared-setup.outputs.release_tag }}" ]; then
+            echo "⚠️  Android config artifact not found, will recreate during build"
+          else
+            echo "✅ Android config artifacts verified"
+          fi
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -359,8 +447,23 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Restore Flutter Dependencies
-        run: flutter pub get
+      - name: Restore Flutter Dependencies (with retry)
+        run: |
+          echo "📦 Restoring Flutter dependencies..."
+          for attempt in 1 2 3; do
+            echo "Restore attempt $attempt/3"
+            if flutter pub get; then
+              echo "✅ Dependencies restored successfully on attempt $attempt"
+              break
+            else
+              echo "❌ Restore attempt $attempt failed"
+              if [ $attempt -eq 3 ]; then
+                echo "❌ Failed to restore dependencies after 3 attempts"
+                exit 1
+              fi
+              sleep 10
+            fi
+          done
 
       - name: Build Android App Bundle (with retry)
         id: build
@@ -418,10 +521,31 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: "*-${{ needs.shared-setup.outputs.release_tag }}"
+        continue-on-error: true
+
+      - name: Verify Artifacts Downloaded
+        run: |
+          echo "🔍 Verifying downloaded artifacts..."
+          if [ ! -d "flutter-dependencies-${{ needs.shared-setup.outputs.release_tag }}" ]; then
+            echo "⚠️  Flutter dependencies artifact not found, will recreate during Flutter setup"
+          else
+            echo "✅ Flutter artifacts verified"
+          fi
+          
+          if [ ! -d "ios-config-${{ needs.shared-setup.outputs.release_tag }}" ]; then
+            echo "⚠️  iOS config artifact not found, will recreate during build"
+          else
+            echo "✅ iOS config artifacts verified"
+          fi
 
       - name: Select Xcode 16.4
         run: |
           sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -430,8 +554,23 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Restore Flutter Dependencies
-        run: flutter pub get
+      - name: Restore Flutter Dependencies (with retry)
+        run: |
+          echo "📦 Restoring Flutter dependencies..."
+          for attempt in 1 2 3; do
+            echo "Restore attempt $attempt/3"
+            if flutter pub get; then
+              echo "✅ Dependencies restored successfully on attempt $attempt"
+              break
+            else
+              echo "❌ Restore attempt $attempt failed"
+              if [ $attempt -eq 3 ]; then
+                echo "❌ Failed to restore dependencies after 3 attempts"
+                exit 1
+              fi
+              sleep 10
+            fi
+          done
 
       - name: Install CocoaPods dependencies
         run: |
