@@ -18,6 +18,19 @@ default_platform(:ios)
 platform :ios do
   desc "Deploy a new version to TestFlight"
   lane :deploy_testflight do
+    # Validate API key environment variables
+    unless ENV['APP_STORE_CONNECT_API_KEY_ID']
+      UI.user_error!("APP_STORE_CONNECT_API_KEY_ID environment variable is missing")
+    end
+    
+    unless ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+      UI.user_error!("APP_STORE_CONNECT_API_ISSUER_ID environment variable is missing")
+    end
+    
+    unless ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
+      UI.user_error!("APP_STORE_CONNECT_API_KEY_CONTENT environment variable is missing")
+    end
+    
     # Get IPA file path from environment variable or use default relative path
     ipa_path = ENV['IPA_FILE_PATH'] || "../build/ios/ipa/*.ipa"
     
@@ -41,7 +54,12 @@ platform :ios do
       skip_submission: true,  # Don't submit for review automatically
       skip_waiting_for_build_processing: false,  # Wait for processing to complete
       app_identifier: 'com.job.progressapp',
-      team_id: ENV['APPLE_TEAM_ID']
+      team_id: ENV['APPLE_TEAM_ID'],
+      api_key: {
+        key_id: ENV['APP_STORE_CONNECT_API_KEY_ID'],
+        issuer_id: ENV['APP_STORE_CONNECT_API_ISSUER_ID'],
+        key_content: ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
+      }
     )
 
     UI.success("Successfully uploaded IPA to TestFlight! ✈️")
@@ -74,6 +92,11 @@ platform :ios do
       skip_waiting_for_build_processing: false,
       app_identifier: 'com.job.progressapp',
       team_id: ENV['APPLE_TEAM_ID'],
+      api_key: {
+        key_id: ENV['APP_STORE_CONNECT_API_KEY_ID'],
+        issuer_id: ENV['APP_STORE_CONNECT_API_ISSUER_ID'],
+        key_content: ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
+      },
       beta_app_review_info: {
         contact_email: ENV['TESTFLIGHT_CONTACT_EMAIL'],
         contact_first_name: ENV['TESTFLIGHT_CONTACT_FIRST_NAME'],

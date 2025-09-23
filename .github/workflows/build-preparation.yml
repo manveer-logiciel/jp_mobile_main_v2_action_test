@@ -668,7 +668,22 @@ jobs:
       
       - name: Deploy to TestFlight
         run: |
-          export IPA_FILE_PATH="$(pwd)/build/ios/ipa/$(ls build/ios/ipa/*.ipa | head -1 | xargs basename)"
+          # Find and validate IPA file
+          IPA_FILES=(build/ios/ipa/*.ipa)
+          if [ ! -f "${IPA_FILES[0]}" ]; then
+            echo "❌ ERROR: No IPA files found in build/ios/ipa/"
+            ls -la build/ios/ipa/ || echo "Directory does not exist"
+            exit 1
+          fi
+          
+          if [ ${#IPA_FILES[@]} -gt 1 ]; then
+            echo "⚠️  WARNING: Multiple IPA files found, using first one:"
+            printf '%s\n' "${IPA_FILES[@]}"
+          fi
+          
+          export IPA_FILE_PATH="$(pwd)/${IPA_FILES[0]}"
+          echo "📱 Using IPA file: $IPA_FILE_PATH"
+          
           cd ios
           bundle exec fastlane deploy_testflight
         env:
