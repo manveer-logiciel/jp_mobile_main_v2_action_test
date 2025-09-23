@@ -57,19 +57,24 @@ platform :ios do
       UI.user_error!("IPA file not found at #{ipa_path}")
     end
 
-    # Upload to TestFlight
-    upload_to_testflight(
-      ipa: ipa_path,
-      skip_submission: true,  # Don't submit for review automatically
-      skip_waiting_for_build_processing: false,  # Wait for processing to complete
-      app_identifier: 'com.job.progressapp',
-      team_id: ENV['APPLE_TEAM_ID'],
-      api_key: {
-        key_id: api_key_id,
-        issuer_id: api_issuer_id,
-        key_content: api_key_content
-      }
-    )
+    # Create API key file for authentication
+    api_key_file = "/tmp/AuthKey_#{api_key_id}.p8"
+    File.write(api_key_file, api_key_content)
+    
+    begin
+      # Upload to TestFlight
+      upload_to_testflight(
+        ipa: ipa_path,
+        skip_submission: true,  # Don't submit for review automatically
+        skip_waiting_for_build_processing: false,  # Wait for processing to complete
+        app_identifier: 'com.job.progressapp',
+        team_id: ENV['APPLE_TEAM_ID'],
+        api_key_path: api_key_file
+      )
+    ensure
+      # Clean up temporary API key file
+      File.delete(api_key_file) if File.exist?(api_key_file)
+    end
 
     UI.success("Successfully uploaded IPA to TestFlight! ✈️")
     UI.message("The build will be available for testing once it finishes processing.")
@@ -111,25 +116,30 @@ platform :ios do
       UI.user_error!("IPA file not found at #{ipa_path}")
     end
 
-    # Upload to TestFlight and submit for review
-    upload_to_testflight(
-      ipa: ipa_path,
-      skip_submission: false,  # Submit for review
-      skip_waiting_for_build_processing: false,
-      app_identifier: 'com.job.progressapp',
-      team_id: ENV['APPLE_TEAM_ID'],
-      api_key: {
-        key_id: api_key_id,
-        issuer_id: api_issuer_id,
-        key_content: api_key_content
-      },
-      beta_app_review_info: {
-        contact_email: ENV['TESTFLIGHT_CONTACT_EMAIL'],
-        contact_first_name: ENV['TESTFLIGHT_CONTACT_FIRST_NAME'],
-        contact_last_name: ENV['TESTFLIGHT_CONTACT_LAST_NAME'],
-        contact_phone: ENV['TESTFLIGHT_CONTACT_PHONE']
-      }
-    )
+    # Create API key file for authentication
+    api_key_file = "/tmp/AuthKey_#{api_key_id}.p8"
+    File.write(api_key_file, api_key_content)
+    
+    begin
+      # Upload to TestFlight and submit for review
+      upload_to_testflight(
+        ipa: ipa_path,
+        skip_submission: false,  # Submit for review
+        skip_waiting_for_build_processing: false,
+        app_identifier: 'com.job.progressapp',
+        team_id: ENV['APPLE_TEAM_ID'],
+        api_key_path: api_key_file,
+        beta_app_review_info: {
+          contact_email: ENV['TESTFLIGHT_CONTACT_EMAIL'],
+          contact_first_name: ENV['TESTFLIGHT_CONTACT_FIRST_NAME'],
+          contact_last_name: ENV['TESTFLIGHT_CONTACT_LAST_NAME'],
+          contact_phone: ENV['TESTFLIGHT_CONTACT_PHONE']
+        }
+      )
+    ensure
+      # Clean up temporary API key file
+      File.delete(api_key_file) if File.exist?(api_key_file)
+    end
 
     UI.success("Successfully uploaded IPA to TestFlight and submitted for review! 🚀")
   end
