@@ -18,10 +18,6 @@ default_platform(:ios)
 platform :ios do
   desc "Deploy a new version to TestFlight"
   lane :deploy_testflight do
-    # Create temporary API key file
-    api_key_content = ENV['APP_STORE_CONNECT_API_KEY']
-    File.write('fastlane_tmp_keyfile.p8', api_key_content) if api_key_content
-    
     # Get IPA file path from environment variable or use default relative path
     ipa_path = ENV['IPA_FILE_PATH'] || "../build/ios/ipa/*.ipa"
     
@@ -45,23 +41,15 @@ platform :ios do
       skip_submission: true,  # Don't submit for review automatically
       skip_waiting_for_build_processing: false,  # Wait for processing to complete
       app_identifier: 'com.job.progressapp',
-      team_id: ENV['APPLE_TEAM_ID'],
-      api_key_path: 'fastlane_tmp_keyfile.p8'
+      team_id: ENV['APPLE_TEAM_ID']
     )
 
     UI.success("Successfully uploaded IPA to TestFlight! ✈️")
     UI.message("The build will be available for testing once it finishes processing.")
-    
-    # Cleanup temporary key file
-    File.delete('fastlane_tmp_keyfile.p8') if File.exist?('fastlane_tmp_keyfile.p8')
   end
 
   desc "Deploy to TestFlight and submit for review"
   lane :deploy_testflight_review do
-    # Create temporary API key file
-    api_key_content = ENV['APP_STORE_CONNECT_API_KEY']
-    File.write('fastlane_tmp_keyfile.p8', api_key_content) if api_key_content
-    
     # Get IPA file path from environment variable or use default relative path
     ipa_path = ENV['IPA_FILE_PATH'] || "../build/ios/ipa/*.ipa"
     
@@ -86,7 +74,6 @@ platform :ios do
       skip_waiting_for_build_processing: false,
       app_identifier: 'com.job.progressapp',
       team_id: ENV['APPLE_TEAM_ID'],
-      api_key_path: 'fastlane_tmp_keyfile.p8',
       beta_app_review_info: {
         contact_email: ENV['TESTFLIGHT_CONTACT_EMAIL'],
         contact_first_name: ENV['TESTFLIGHT_CONTACT_FIRST_NAME'],
@@ -96,9 +83,6 @@ platform :ios do
     )
 
     UI.success("Successfully uploaded IPA to TestFlight and submitted for review! 🚀")
-    
-    # Cleanup temporary key file
-    File.delete('fastlane_tmp_keyfile.p8') if File.exist?('fastlane_tmp_keyfile.p8')
   end
 
   desc "Download and install certificates and provisioning profiles"
