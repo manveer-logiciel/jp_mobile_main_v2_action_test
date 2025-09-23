@@ -166,6 +166,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            ${{ env.PUB_CACHE }}
             ~/.pub-cache
             .dart_tool
           key: flutter-shared-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}-v2
@@ -294,6 +295,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            ${{ env.PUB_CACHE }}
             ~/.pub-cache
             .dart_tool
           key: flutter-shared-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}-v2
@@ -473,6 +475,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            ${{ env.PUB_CACHE }}
             ~/.pub-cache
             ~/Library/Caches/dart-pub
             .dart_tool
@@ -632,6 +635,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            ${{ env.PUB_CACHE }}
             ~/.pub-cache
             ~/Library/Caches/dart-pub
             .dart_tool
