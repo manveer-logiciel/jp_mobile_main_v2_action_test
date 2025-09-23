@@ -10,6 +10,8 @@ on:
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
+      GITHUB_TOKEN:
+        required: true
       IOS_DISTRIBUTION_CERTIFICATE_BASE64:
         required: true
       IOS_CERTIFICATE_PASSWORD:
@@ -50,7 +52,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN || github.token }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
       
       # Enhanced Flutter caching for macOS
@@ -98,7 +100,7 @@ jobs:
       
       - name: Configure Git for private repos
         run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || github.token }}"
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
       # Get Flutter dependencies early for parallel processing
