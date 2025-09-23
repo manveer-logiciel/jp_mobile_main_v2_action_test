@@ -1,0 +1,520 @@
+name: Flutter Build - Matrix Optimized
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g., 3.37.2)'
+        required: true
+        type: string
+      verify_release_tag:
+        description: 'Verify Release Tag (must match above)'
+        required: true
+        type: string
+      password:
+        description: 'Password for secure operations'
+        required: true
+        type: string
+      build_platform:
+        description: 'Select build platform'
+        required: true
+        type: choice
+        options:
+          - Both
+          - Android
+          - iOS
+        default: Both
+
+env:
+  FLUTTER_VERSION: '3.27.2'
+  JAVA_VERSION: '17'
+
+jobs:
+  prepare-and-validate:
+    name: Prepare & Validate Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.validation.outputs.release_tag }}
+      build_platform: ${{ steps.validation.outputs.build_platform }}
+      should_build_android: ${{ steps.validation.outputs.should_build_android }}
+      should_build_ios: ${{ steps.validation.outputs.should_build_ios }}
+      version_name: ${{ steps.version.outputs.version_name }}
+      version_code: ${{ steps.version.outputs.version_code }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1  # Shallow clone for faster checkout
+          fetch-tags: true  # But ensure we get tags
+      
+      - name: Validate Inputs & Set Outputs
+        id: validation
+        run: |
+          RELEASE_TAG="${{ inputs.release_tag }}"
+          VERIFY_RELEASE_TAG="${{ inputs.verify_release_tag }}"
+          PASSWORD="${{ inputs.password }}"
+          PLATFORM="${{ inputs.build_platform }}"
+          
+          echo "🔍 Validating inputs..."
+          echo "🏷️ Release Tag: $RELEASE_TAG"
+          echo "🔐 Password: [REDACTED]"
+          echo "🏗️ Platform: $PLATFORM"
+          
+          # Validate release tags match
+          if [[ "$RELEASE_TAG" != "$VERIFY_RELEASE_TAG" ]]; then
+            echo "❌ ERROR: Release tag and verify release tag do not match"
+            exit 1
+          fi
+          
+          # Validate release tag format
+          source scripts/version-utils.sh
+          validate_release_tag "$RELEASE_TAG" || exit 1
+          
+          # Check if the tag exists
+          echo "🔍 Checking if tag '$RELEASE_TAG' exists..."
+          if ! git tag -l | grep -q "^$RELEASE_TAG$"; then
+            echo "❌ ERROR: Tag '$RELEASE_TAG' does not exist in the repository"
+            echo "Available tags:"
+            git tag -l | sort -V | tail -10
+            exit 1
+          fi
+          
+          # Validate password
+          if [[ -z "$PASSWORD" ]] || [[ "$PASSWORD" != "${{ secrets.RELEASE_PASSWORD }}" ]]; then
+            echo "❌ ERROR: Invalid password provided"
+            exit 1
+          fi
+          
+          echo "✅ Input validation successful"
+          
+          # Set outputs for next steps
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
+          
+          # Set conditional build flags
+          if [[ "$PLATFORM" == "Android" || "$PLATFORM" == "Both" ]]; then
+            echo "should_build_android=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build_android=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$PLATFORM" == "iOS" || "$PLATFORM" == "Both" ]]; then
+            echo "should_build_ios=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build_ios=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Calculate Version
+        id: version
+        run: |
+          source scripts/version-utils.sh
+          export_version_vars "${{ steps.validation.outputs.release_tag }}"
+      
+      - name: Validation Complete
+        run: |
+          echo "::notice title=Preparation Complete::✅ Build validation completed successfully"
+
+  # Shared setup job for Flutter dependencies
+  setup-flutter:
+    name: Setup Flutter Dependencies
+    runs-on: ubuntu-latest
+    needs: prepare-and-validate
+    if: ${{ needs.prepare-and-validate.outputs.should_build_android == 'true' || needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
+    outputs:
+      cache-hit: ${{ steps.cache-flutter.outputs.cache-hit }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: Cache Flutter Dependencies
+        id: cache-flutter
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            .dart_tool
+          key: flutter-deps-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-v3
+          restore-keys: |
+            flutter-deps-${{ env.FLUTTER_VERSION }}-
+      
+      - name: Setup Flutter
+        if: steps.cache-flutter.outputs.cache-hit != 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Configure Git for private repos
+        if: steps.cache-flutter.outputs.cache-hit != 'true'
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      - name: Get Flutter dependencies
+        if: steps.cache-flutter.outputs.cache-hit != 'true'
+        run: flutter pub get
+
+  # Matrix build job for both platforms
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: [prepare-and-validate, setup-flutter]
+    if: always() && needs.prepare-and-validate.result == 'success'
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: read
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            os: ubuntu-latest
+            condition: ${{ needs.prepare-and-validate.outputs.should_build_android == 'true' }}
+            artifact_name: android-app-bundle
+            artifact_path: build/app/outputs/bundle/release/app-release.aab
+          - platform: ios
+            os: macos-15
+            condition: ${{ needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
+            artifact_name: ios-app
+            artifact_path: build/ios/ipa/*.ipa
+    
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+      
+      # Platform-specific setup
+      - name: Setup Java (Android only)
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+      
+      - name: Select Xcode (iOS only)
+        if: matrix.platform == 'ios'
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+      
+      # Restore Flutter cache from setup job
+      - name: Restore Flutter Dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.pub-cache
+            .dart_tool
+          key: flutter-deps-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-v3
+          restore-keys: |
+            flutter-deps-${{ env.FLUTTER_VERSION }}-
+      
+      # Platform-specific caching
+      - name: Cache Android Dependencies
+        if: matrix.platform == 'android'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android
+          key: android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-v3
+          restore-keys: |
+            android-${{ runner.os }}-
+      
+      - name: Cache CocoaPods Dependencies
+        if: matrix.platform == 'ios'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/Pods
+            ~/.cocoapods
+            ~/Library/Caches/CocoaPods
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-v3
+          restore-keys: |
+            cocoapods-${{ runner.os }}-
+      
+      - name: Cache Ruby & Fastlane
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ matrix.platform }}/vendor/bundle
+            ~/.gem
+            ~/.bundle
+          key: ruby-${{ matrix.platform }}-${{ runner.os }}-${{ hashFiles(format('{0}/Gemfile.lock', matrix.platform)) }}-v3
+          restore-keys: |
+            ruby-${{ matrix.platform }}-${{ runner.os }}-
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      # Platform-specific environment setup using scripts
+      - name: Setup Android Environment
+        if: matrix.platform == 'android'
+        run: |
+          source scripts/setup-android.sh
+          setup_android_environment "${{ needs.prepare-and-validate.outputs.release_tag }}"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      
+      - name: Install CocoaPods dependencies (iOS only)
+        if: matrix.platform == 'ios'
+        run: |
+          cd ios
+          if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
+            pod install --repo-update
+          else
+            pod install
+          fi
+      
+      - name: Setup iOS Environment
+        if: matrix.platform == 'ios'
+        run: |
+          source scripts/setup-ios.sh
+          setup_ios_environment "${{ needs.prepare-and-validate.outputs.release_tag }}"
+      
+      # iOS Code Signing (only for iOS)
+      - name: Setup iOS Code Signing
+        if: matrix.platform == 'ios'
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
+          SHARE_PROFILE_PATH=$RUNNER_TEMP/share_extension.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          
+          # Import certificate and provisioning profiles
+          echo -n "$IOS_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $MAIN_PROFILE_PATH
+          echo -n "$IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $SHARE_PROFILE_PATH
+          
+          # Setup keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          
+          # Install provisioning profiles
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          
+          # Extract profile information
+          MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null)
+          SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null)
+          MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null)
+          SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null)
+          
+          # Install profiles
+          cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision
+          cp $SHARE_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision
+          
+          # Update ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:${{ secrets.IOS_BUNDLE_ID }} $MAIN_PROFILE_NAME" ios/ExportOptions.plist 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${{ secrets.IOS_BUNDLE_ID }} string $MAIN_PROFILE_NAME" ios/ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:${{ secrets.IOS_SHARE_EXTENSION_BUNDLE_ID }} $SHARE_PROFILE_NAME" ios/ExportOptions.plist 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${{ secrets.IOS_SHARE_EXTENSION_BUNDLE_ID }} string $SHARE_PROFILE_NAME" ios/ExportOptions.plist
+          
+          # Configure Xcode project
+          source scripts/setup-ios.sh
+          # Set provisioning profiles in project
+          safe_pbxproj_set "97C147061CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          
+          # Set development team
+          safe_pbxproj_set "97C147061CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          
+          echo "✅ iOS code signing setup complete"
+      
+      # Build step
+      - name: Build ${{ matrix.platform }}
+        run: |
+          VERSION_NAME="${{ needs.prepare-and-validate.outputs.version_name }}"
+          VERSION_CODE="${{ needs.prepare-and-validate.outputs.version_code }}"
+          
+          if [[ "${{ matrix.platform }}" == "android" ]]; then
+            echo "::notice title=Android Build::🏗️ Building release app bundle..."
+            flutter build appbundle --release \
+              --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
+              --split-debug-info=build/android/debug-info \
+              --obfuscate
+            echo "::notice title=Android Build::✅ App bundle created successfully"
+          else
+            echo "::notice title=iOS Build::🏗️ Building iOS archive (.ipa)..."
+            flutter build ipa --release \
+              --export-options-plist=ios/ExportOptions.plist \
+              --build-name="$VERSION_NAME" \
+              --build-number="$VERSION_CODE" \
+              --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
+              --split-debug-info=build/ios/debug-info \
+              --obfuscate
+            echo "::notice title=iOS Build::✅ IPA archive created successfully"
+          fi
+      
+      # Ruby & Fastlane setup for deployment
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ${{ matrix.platform }}
+      
+      # Platform-specific deployment
+      - name: Deploy Android to Google Play Console
+        if: matrix.platform == 'android'
+        run: |
+          echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
+          export AAB_FILE_PATH="$(pwd)/build/app/outputs/bundle/release/app-release.aab"
+          cd android
+          bundle exec fastlane deploy_internal
+        env:
+          SUPPLY_JSON_KEY_FILE: play-console-service-account.json
+      
+      - name: Deploy iOS to TestFlight
+        if: matrix.platform == 'ios'
+        run: |
+          IPA_FILES=(build/ios/ipa/*.ipa)
+          export IPA_FILE_PATH="$(pwd)/${IPA_FILES[0]}"
+          cd ios
+          bundle exec fastlane deploy_testflight
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+      
+      # Upload artifacts only on failure or for debugging
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ${{ matrix.artifact_name }}-${{ needs.prepare-and-validate.outputs.release_tag }}
+          path: ${{ matrix.artifact_path }}
+          retention-days: 7  # Reduced retention for cost savings
+      
+      # Cleanup (iOS only)
+      - name: Cleanup Keychain
+        if: always() && matrix.platform == 'ios'
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+      
+      # Build summary
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "## ${{ matrix.platform == 'android' && '🤖' || '📱' }} ${{ matrix.platform }} Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platform** | \`${{ matrix.platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Flutter Version** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ matrix.platform }}" == "android" && -f "build/app/outputs/bundle/release/app-release.aab" ]]; then
+            echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **App Bundle deployed to Google Play Console Internal Testing**" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ matrix.platform }}" == "ios" && -f build/ios/ipa/*.ipa ]]; then
+            echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **iOS app deployed to TestFlight successfully**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build failed or deployment incomplete**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Final summary job
+  build-summary:
+    name: Final Build Summary
+    needs: [prepare-and-validate, build]
+    if: always() && needs.prepare-and-validate.result == 'success'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Generate Final Build Summary
+        run: |
+          echo "## 📦 Matrix Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Android Status
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_android }}" == "true" ]]; then
+            echo "**🤖 Android Build**" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ needs.build.result }}" == "success" ]]; then
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "+ ✅ Deployed to Google Play Console" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "- ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**🤖 Android Build**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # iOS Status
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_ios }}" == "true" ]]; then
+            echo "**📱 iOS Build**" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ needs.build.result }}" == "success" ]]; then
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "+ ✅ Deployed to TestFlight" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "- ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "**📱 iOS Build**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 📋 Build Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platform** | \`${{ needs.prepare-and-validate.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY

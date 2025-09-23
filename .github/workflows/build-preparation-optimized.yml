@@ -1,30 +1,4 @@
-# ============================================================================
-# OPTIMIZED BUILD PREPARATION WORKFLOW - FRAGMENTED ARCHITECTURE
-# ============================================================================
-# 
-# This workflow addresses the challenge of heavy, monolithic builds where
-# failure of any step requires restarting the entire job. The fragmented
-# architecture allows granular recovery and parallel execution.
-#
-# EDGE CASES ADDRESSED:
-# 1. Private repository authentication failures
-# 2. Network connectivity issues with retry logic
-# 3. Missing artifacts with fallback mechanisms
-# 4. Secret validation and error reporting
-# 5. Build failures with automatic retries
-# 6. Deployment failures with independent retry logic
-# 7. Platform-specific environment setup issues
-#
-# REQUIRED SECRETS:
-# - RELEASE_PASSWORD: Password for secure operations
-# - PRIVATE_REPO_TOKEN: Token with access to private repositories
-# - Android secrets: ANDROID_KEYSTORE_BASE64, ANDROID_STORE_PASSWORD, etc.
-# - iOS secrets: IOS_DISTRIBUTION_CERTIFICATE_BASE64, APPLE_ID, etc.
-# - Deployment secrets: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, APP_STORE_CONNECT_API_KEY, etc.
-#
-# ============================================================================
-
-name: Optimized Build Preparation (Fragmented)
+name: Integration Build Preparation
 
 on:
   workflow_dispatch:
@@ -56,12 +30,9 @@ env:
   JAVA_VERSION: '17'
 
 jobs:
-  # ============================================================================
-  # SHARED SETUP JOB - Fast, Cacheable, Shared Dependencies
-  # ============================================================================
-  shared-setup:
-    name: 🔧 Shared Setup & Validation
-    runs-on: ubuntu-latest
+  prepare-and-validate:
+    name: Prepare & Validate Build
+    runs-on: ubuntu-latest  # Use Ubuntu for faster validation
     permissions:
       contents: write
     outputs:
@@ -69,16 +40,14 @@ jobs:
       build_platform: ${{ steps.validation.outputs.build_platform }}
       should_build_android: ${{ steps.validation.outputs.should_build_android }}
       should_build_ios: ${{ steps.validation.outputs.should_build_ios }}
-      flutter_cache_key: ${{ steps.cache-keys.outputs.flutter_cache_key }}
-      pubspec_hash: ${{ steps.cache-keys.outputs.pubspec_hash }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-
+          fetch-depth: 0  # Fetch all history and tags
+      
       - name: Validate Inputs & Set Outputs
         id: validation
         run: |
@@ -88,26 +57,40 @@ jobs:
           PLATFORM="${{ inputs.build_platform }}"
           
           echo "🔍 Validating inputs..."
+          echo "🏷️ Release Tag: $RELEASE_TAG"
+          echo "🔐 Password: [REDACTED]"
+          echo "🏗️ Platform: $PLATFORM"
           
           # Validate release tags match
           if [[ "$RELEASE_TAG" != "$VERIFY_RELEASE_TAG" ]]; then
             echo "❌ ERROR: Release tag and verify release tag do not match"
+            echo "Release Tag: '$RELEASE_TAG'"
+            echo "Verify Release Tag: '$VERIFY_RELEASE_TAG'"
             exit 1
           fi
           
-          # Validate release tag format
+          # Validate release tag format (semantic version without 'v' prefix)
           if [[ ! $RELEASE_TAG =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ ERROR: Invalid release tag format. Expected format: x.y.z"
+            echo "❌ ERROR: Invalid release tag format. Expected format: x.y.z (e.g., 3.37.2)"
             exit 1
           fi
           
-          # Check if tag exists
+          # Check if the tag exists in the repository
+          echo "🔍 Checking if tag '$RELEASE_TAG' exists..."
           if ! git tag -l | grep -q "^$RELEASE_TAG$"; then
-            echo "❌ ERROR: Tag '$RELEASE_TAG' does not exist"
+            echo "❌ ERROR: Tag '$RELEASE_TAG' does not exist in the repository"
+            echo "Available tags:"
+            git tag -l | sort -V | tail -10
+            echo ""
+            echo "Please create the tag first using:"
+            echo "  git tag $RELEASE_TAG"
+            echo "  git push origin $RELEASE_TAG"
             exit 1
           fi
           
-          # Validate password
+          echo "✅ Tag '$RELEASE_TAG' exists in the repository"
+          
+          # Validate password is provided and not empty
           if [[ -z "$PASSWORD" ]]; then
             echo "❌ ERROR: Password input is required"
             exit 1
@@ -127,9 +110,11 @@ jobs:
             exit 1
           fi
           
+          echo "🔐 Password verified successfully against stored secret"
+          
           echo "✅ Input validation successful"
           
-          # Set outputs
+          # Set outputs for next steps
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
           
@@ -145,106 +130,50 @@ jobs:
           else
             echo "should_build_ios=false" >> $GITHUB_OUTPUT
           fi
-
-      - name: Generate Cache Keys
-        id: cache-keys
+      
+      - name: Validation Complete
         run: |
-          PUBSPEC_HASH="${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}"
-          FLUTTER_CACHE_KEY="flutter-shared-${{ env.FLUTTER_VERSION }}-${PUBSPEC_HASH}"
-          
-          echo "pubspec_hash=${PUBSPEC_HASH}" >> $GITHUB_OUTPUT
-          echo "flutter_cache_key=${FLUTTER_CACHE_KEY}" >> $GITHUB_OUTPUT
+          echo "::notice title=Preparation Complete::✅ Build validation completed successfully"
 
-      - name: Configure Git for private repos
-        run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
-          if [[ -z "$TOKEN" ]]; then
-            echo "❌ ERROR: PRIVATE_REPO_TOKEN is not configured"
-            echo "Please set PRIVATE_REPO_TOKEN secret with access to private repositories"
-            exit 1
-          fi
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-          echo "✅ Git configured for private repository access"
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+  build-android:
+    name: Build Android (.aab)
+    needs: prepare-and-validate
+    if: ${{ needs.prepare-and-validate.outputs.should_build_android == 'true' }}
+    runs-on: ubuntu-latest  # Use Ubuntu for Android builds - much faster!
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-
-      - name: Get Flutter dependencies (with retry)
-        run: |
-          echo "📦 Installing Flutter dependencies..."
-          for attempt in 1 2 3; do
-            echo "Attempt $attempt/3"
-            if flutter pub get; then
-              echo "✅ Flutter dependencies installed successfully on attempt $attempt"
-              break
-            else
-              echo "❌ Dependency installation attempt $attempt failed"
-              if [ $attempt -eq 3 ]; then
-                echo "❌ All dependency installation attempts failed"
-                echo "Common causes:"
-                echo "1. Private repository access token is invalid or expired"
-                echo "2. Private repository does not exist or access denied"
-                echo "3. Network connectivity issues"
-                echo "4. Dependency version conflicts"
-                exit 1
-              fi
-              echo "Retrying in 10 seconds..."
-              sleep 10
-            fi
-          done
-
-      - name: Cache Flutter Dependencies (Shared)
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      # Parallel setup of Java and caching
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+      
+      # Enhanced Flutter caching with better restore keys
+      - name: Cache Flutter Dependencies
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.PUB_CACHE }}
             ~/.pub-cache
             .dart_tool
-          key: ${{ steps.cache-keys.outputs.flutter_cache_key }}
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}-android
           restore-keys: |
-            flutter-shared-${{ env.FLUTTER_VERSION }}-
-            flutter-shared-
-
-      - name: Upload Flutter Dependencies Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: flutter-dependencies-${{ steps.validation.outputs.release_tag }}
-          path: |
-            .dart_tool/
-            pubspec.lock
-          retention-days: 1
-
-  # ============================================================================
-  # ANDROID PREPARATION JOB - Platform-specific setup
-  # ============================================================================
-  android-preparation:
-    name: 🤖 Android Preparation
-    needs: shared-setup
-    if: ${{ needs.shared-setup.outputs.should_build_android == 'true' }}
-    runs-on: ubuntu-latest
-    outputs:
-      android_ready: ${{ steps.android-setup.outputs.ready }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download Flutter Dependencies
-        uses: actions/download-artifact@v4
-        with:
-          name: flutter-dependencies-${{ needs.shared-setup.outputs.release_tag }}
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Cache Android Dependencies
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+            flutter-${{ runner.os }}-
+      
+      # Enhanced Android caching with build cache
+      - name: Cache Android Dependencies & Build
         uses: actions/cache@v4
         with:
           path: |
@@ -254,17 +183,35 @@ jobs:
             ~/.android
             android/.gradle
             android/app/.gradle
+            android/build
             ~/.konan
             ~/.kotlin
-          key: android-prep-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+            /home/runner/.gradle/caches/transforms-*
+            /home/runner/.gradle/caches/build-cache-*
+          key: android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/*.kt') }}-v2
           restore-keys: |
-            android-prep-${{ runner.os }}-
-
-      - name: Android Environment Setup
-        id: android-setup
+            android-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}-
+            android-${{ runner.os }}-
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Configure Git for private repos
         run: |
-          echo "🔧 Setting up Android build environment..."
-          
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      # Get Flutter dependencies early for parallel processing
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      # Batch Android configuration for better performance
+      - name: Configure Android Build Environment
+        run: |
           # Create keystore
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
           chmod 600 android/keystore.jks
@@ -277,9 +224,11 @@ jobs:
           storeFile=../keystore.jks
           EOF
           
-          # Extract version info
-          RELEASE_TAG="${{ needs.shared-setup.outputs.release_tag }}"
-          VERSION_NAME="$RELEASE_TAG"
+          # Extract version info from release tag
+          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
+          VERSION_NAME="$RELEASE_TAG"  # Use release tag directly
+          
+          # Convert version to build number (e.g., 3.37.2 -> 303700200)
           IFS='.' read -ra VERSION_PARTS <<< "$VERSION_NAME"
           VERSION_CODE="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
           
@@ -290,58 +239,206 @@ jobs:
           flutter.sdk=$FLUTTER_ROOT
           EOF
           
-          echo "ready=true" >> $GITHUB_OUTPUT
-          echo "✅ Android preparation complete"
-
-      - name: Upload Android Configuration
-        uses: actions/upload-artifact@v4
+          echo "✅ Android build environment configured"
+      
+      - name: Build App Bundle
+        run: |
+          echo "::notice title=Android Build::🏗️ Building release app bundle..."
+          flutter build appbundle --release \
+            --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
+            --split-debug-info=build/android/debug-info \
+            --obfuscate
+          echo "::notice title=Android Build::✅ App bundle created successfully"
+          
+      
+      # Deploy to Google Play Console Internal Testing
+      - name: Cache Ruby Dependencies & Fastlane
+        uses: actions/cache@v4
         with:
-          name: android-config-${{ needs.shared-setup.outputs.release_tag }}
           path: |
-            android/keystore.jks
-            android/key.properties
-            android/local.properties
-          retention-days: 1
+            android/vendor/bundle
+            ~/.gem
+            ~/.bundle
+            android/.bundle
+          key: ruby-fastlane-${{ runner.os }}-${{ hashFiles('android/Gemfile', 'android/Gemfile.lock') }}-v2
+          restore-keys: |
+            ruby-fastlane-${{ runner.os }}-${{ hashFiles('android/Gemfile') }}-
+            ruby-fastlane-${{ runner.os }}-
+      
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: android
+      
+      - name: Setup Google Play Console Service Account
+        run: |
+          echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
+          chmod 600 android/play-console-service-account.json
+      
+      - name: Deploy to Google Play Console Internal Testing
+        run: |
+          export AAB_FILE_PATH="$(pwd)/build/app/outputs/bundle/release/app-release.aab"
+          cd android
+          bundle exec fastlane deploy_internal
+        env:
+          SUPPLY_JSON_KEY_FILE: play-console-service-account.json
+      
+      - name: Upload App Bundle (Backup)
+        uses: actions/upload-artifact@v4
+        if: always()  # Upload even if deployment fails
+        with:
+          name: android-app-bundle-${{ needs.prepare-and-validate.outputs.release_tag }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+      
+      - name: Android Build Summary
+        run: |
+          echo "## 🤖 Android Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Java** | \`${{ env.JAVA_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Gradle** | \`$(cd android && ./gradlew --version | grep 'Gradle' | head -1 | cut -d' ' -f2)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Kotlin** | \`$(cd android && ./gradlew --version | grep 'Kotlin:' | cut -d' ' -f9)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Target SDK** | \`$(grep 'compileSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Min SDK** | \`$(grep 'minSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **App Bundle deployed to Google Play Console Internal Testing**" >> $GITHUB_STEP_SUMMARY
 
-  # ============================================================================
-  # iOS PREPARATION JOB - Platform-specific setup
-  # ============================================================================
-  ios-preparation:
-    name: 🍎 iOS Preparation
-    needs: shared-setup
-    if: ${{ needs.shared-setup.outputs.should_build_ios == 'true' }}
-    runs-on: macos-15
-    outputs:
-      ios_ready: ${{ steps.ios-setup.outputs.ready }}
+  build-ios:
+    name: Build iOS
+    needs: prepare-and-validate
+    if: ${{ needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
+    runs-on: macos-15  # Use macOS-15 to support Xcode 16.4
+    permissions:
+      contents: read
+      packages: read
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Download Flutter Dependencies
-        uses: actions/download-artifact@v4
         with:
-          name: flutter-dependencies-${{ needs.shared-setup.outputs.release_tag }}
-
-      - name: Select Xcode 16.4
-        run: |
-          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
-          xcodebuild -version
-
-      - name: Cache CocoaPods Dependencies
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      # Enhanced Flutter caching for macOS
+      - name: Cache Flutter Dependencies  
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.PUB_CACHE }}
+            ~/.pub-cache
+            ~/Library/Caches/dart-pub
+            .dart_tool
+          key: flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}-ios
+          restore-keys: |
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-
+            flutter-macOS-
+      
+      # Enhanced CocoaPods caching with additional paths
+      - name: Cache CocoaPods & iOS Build
         uses: actions/cache@v4
         with:
           path: |
             ios/Pods
             ~/.cocoapods
             ~/Library/Caches/CocoaPods
+            ios/build
             ios/.symlinks
-          key: cocoapods-prep-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj') }}-v2
           restore-keys: |
-            cocoapods-prep-${{ runner.os }}-
-
-      - name: iOS Environment Setup
-        id: ios-setup
+            cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-
+            cocoapods-${{ runner.os }}-
+      
+      - name: Select Xcode 16.4
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+          echo "Selected Xcode version:"
+          xcode-select -p
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Configure Git for private repos
+        run: |
+          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+      
+      # Get Flutter dependencies early for parallel processing
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      # Install CocoaPods dependencies with optimization
+      - name: Install CocoaPods dependencies
+        run: |
+          echo "::notice title=iOS Build::📦 Installing CocoaPods dependencies..."
+          cd ios
+          # Only run repo update if cache miss or force update needed
+          if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
+            pod install --repo-update
+          else
+            pod install
+          fi
+          echo "::notice title=iOS Build::✅ CocoaPods dependencies installed"
+      
+      - name: Configure Xcode Project for Manual Signing
+        run: |
+          echo "🔧 Configuring Xcode project for manual signing..."
+          
+          # Function to safely set plist value (add if doesn't exist, set if exists)
+          safe_pbxproj_set() {
+            local target_id="$1"
+            local key="$2"
+            local value="$3"
+            
+            if /usr/libexec/PlistBuddy -c "Print :objects:$target_id:buildSettings:$key" ios/Runner.xcodeproj/project.pbxproj >/dev/null 2>&1; then
+              /usr/libexec/PlistBuddy -c "Set :objects:$target_id:buildSettings:$key $value" ios/Runner.xcodeproj/project.pbxproj
+            else
+              /usr/libexec/PlistBuddy -c "Add :objects:$target_id:buildSettings:$key string $value" ios/Runner.xcodeproj/project.pbxproj
+            fi
+          }
+          
+          # Configure main app (Runner target) - Debug, Release, Profile
+          echo "📱 Configuring main app signing..."
+          safe_pbxproj_set "97C147061CF9000F007C117D" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "CODE_SIGN_STYLE" "Manual"
+          
+          safe_pbxproj_set "97C147061CF9000F007C117D" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          
+          # Configure Share Extension target - Debug, Release, Profile
+          echo "📱 Configuring Share Extension signing..."
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "CODE_SIGN_STYLE" "Manual"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "CODE_SIGN_STYLE" "Manual"
+          
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "CODE_SIGN_IDENTITY" "Apple Distribution"
+          
+          echo "✅ Xcode project configured for manual signing (both main app and Share Extension)"
+      
+      
+      # iOS Code Signing Setup
+      - name: Setup iOS Code Signing
         env:
           IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
@@ -349,467 +446,383 @@ jobs:
           IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
-          echo "🔧 Setting up iOS build environment..."
-          
           # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
           SHARE_PROFILE_PATH=$RUNNER_TEMP/share_extension.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           
-          # Import certificate and provisioning profiles
+          # Import certificate and provisioning profiles from secrets
           echo -n "$IOS_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
           echo -n "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $MAIN_PROFILE_PATH
           echo -n "$IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $SHARE_PROFILE_PATH
           
-          # Create and setup keychain
+          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Import certificate to keychain
           security import $CERTIFICATE_PATH -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
           
           # Install provisioning profiles
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           
-          # Extract profile information
+          # Extract profile information with streamlined error handling
           MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          
+          # Validate extracted values
+          if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$MAIN_PROFILE_NAME" ]] || [[ -z "$SHARE_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_NAME" ]]; then
+            echo "❌ ERROR: Failed to extract provisioning profile information"
+            exit 1
+          fi
           
           # Install profiles
           cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision
           cp $SHARE_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision
           
-          echo "ready=true" >> $GITHUB_OUTPUT
-          echo "✅ iOS preparation complete"
-
-      - name: Upload iOS Configuration
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-config-${{ needs.shared-setup.outputs.release_tag }}
-          path: |
-            ~/Library/MobileDevice/Provisioning Profiles/
-            ios/ExportOptions.plist
-          retention-days: 1
-
-  # ============================================================================
-  # ANDROID BUILD JOB - Isolated, Heavy Build Process
-  # ============================================================================
-  android-build:
-    name: 🏗️ Android Build
-    needs: [shared-setup, android-preparation]
-    if: ${{ needs.android-preparation.outputs.android_ready == 'true' }}
-    runs-on: ubuntu-latest
-    outputs:
-      build_success: ${{ steps.build.outputs.success }}
-      aab_path: ${{ steps.build.outputs.aab_path }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download Dependencies & Config
-        uses: actions/download-artifact@v4
-        with:
-          pattern: "*-${{ needs.shared-setup.outputs.release_tag }}"
-        continue-on-error: true
-
-      - name: Verify Artifacts Downloaded
-        run: |
-          echo "🔍 Verifying downloaded artifacts..."
-          if [ ! -d "flutter-dependencies-${{ needs.shared-setup.outputs.release_tag }}" ]; then
-            echo "⚠️  Flutter dependencies artifact not found, will recreate during Flutter setup"
-          else
-            echo "✅ Flutter artifacts verified"
-          fi
+          # Update ExportOptions.plist
+          cp ios/ExportOptions.plist ios/ExportOptions.plist.backup
           
-          if [ ! -d "android-config-${{ needs.shared-setup.outputs.release_tag }}" ]; then
-            echo "⚠️  Android config artifact not found, will recreate during build"
-          else
-            echo "✅ Android config artifacts verified"
-          fi
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Configure Git for private repos
-        run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-
-      - name: Restore Flutter Dependencies (with retry)
-        run: |
-          echo "📦 Restoring Flutter dependencies..."
-          for attempt in 1 2 3; do
-            echo "Restore attempt $attempt/3"
-            if flutter pub get; then
-              echo "✅ Dependencies restored successfully on attempt $attempt"
-              break
-            else
-              echo "❌ Restore attempt $attempt failed"
-              if [ $attempt -eq 3 ]; then
-                echo "❌ Failed to restore dependencies after 3 attempts"
-                exit 1
-              fi
-              sleep 10
+          # Function to safely update plist values
+          safe_plist_update() {
+            local key="$1"
+            local value="$2"
+            if ! /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:$key \"$value\"" ios/ExportOptions.plist 2>/dev/null; then
+              /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$key string \"$value\"" ios/ExportOptions.plist 2>/dev/null || return 1
             fi
-          done
-
-      - name: Build Android App Bundle (with retry)
-        id: build
-        run: |
-          echo "🏗️ Building Android App Bundle..."
+          }
           
-          # Retry logic for build
-          for attempt in 1 2 3; do
-            echo "Build attempt $attempt/3"
+          # Update provisioning profiles in ExportOptions.plist
+          safe_plist_update "${{ secrets.IOS_BUNDLE_ID }}" "$MAIN_PROFILE_NAME"
+          safe_plist_update "${{ secrets.IOS_SHARE_EXTENSION_BUNDLE_ID }}" "$SHARE_PROFILE_NAME"
+          
+          # Basic bundle ID validation
+          MAIN_BUNDLE_ID_FULL=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          MAIN_BUNDLE_ID=$(echo "$MAIN_BUNDLE_ID_FULL" | sed 's/^[^.]*\.//')
+          
+          if [[ "$MAIN_BUNDLE_ID" != "${{ secrets.IOS_BUNDLE_ID }}" ]]; then
+            echo "❌ ERROR: Bundle ID mismatch. Expected: ${{ secrets.IOS_BUNDLE_ID }}, Found: $MAIN_BUNDLE_ID"
+            exit 1
+          fi
+          
+          echo "✅ iOS code signing setup complete"
+          echo "::notice title=iOS Build::🔐 Code signing configured successfully"
+      
+      - name: Configure Provisioning Profile UUIDs in Xcode Project
+        run: |
+          echo "🔧 Setting provisioning profile UUIDs in Xcode project..."
+          
+          # Get the profile UUIDs that were extracted earlier
+          MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
+          SHARE_PROFILE_PATH=$RUNNER_TEMP/share_extension.mobileprovision
+          
+          # Use the same robust extraction method as before
+          MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          
+          # Validate the extracted UUIDs
+          if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_UUID" ]]; then
+            echo "❌ ERROR: Failed to extract provisioning profile UUIDs for Xcode project configuration"
+            echo "📋 Main profile UUID: '$MAIN_PROFILE_UUID'"
+            echo "📋 Share profile UUID: '$SHARE_PROFILE_UUID'"
+            exit 1
+          fi
+          
+          echo "📋 Setting Main app profile UUID: $MAIN_PROFILE_UUID"
+          echo "📋 Setting Share extension profile UUID: $SHARE_PROFILE_UUID"
+          
+          # Function to safely set plist value (add if doesn't exist, set if exists)
+          safe_pbxproj_set() {
+            local target_id="$1"
+            local key="$2"
+            local value="$3"
             
-            if flutter build appbundle --release \
-              --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
-              --split-debug-info=build/android/debug-info \
-              --obfuscate; then
-              
-              echo "success=true" >> $GITHUB_OUTPUT
-              echo "aab_path=build/app/outputs/bundle/release/app-release.aab" >> $GITHUB_OUTPUT
-              echo "✅ Android build successful on attempt $attempt"
-              break
+            if /usr/libexec/PlistBuddy -c "Print :objects:$target_id:buildSettings:$key" ios/Runner.xcodeproj/project.pbxproj >/dev/null 2>&1; then
+              /usr/libexec/PlistBuddy -c "Set :objects:$target_id:buildSettings:$key $value" ios/Runner.xcodeproj/project.pbxproj
             else
-              echo "❌ Build attempt $attempt failed"
-              if [ $attempt -eq 3 ]; then
-                echo "success=false" >> $GITHUB_OUTPUT
-                exit 1
-              fi
-              sleep 30
+              /usr/libexec/PlistBuddy -c "Add :objects:$target_id:buildSettings:$key string $value" ios/Runner.xcodeproj/project.pbxproj
             fi
-          done
-
-      - name: Upload Android App Bundle
-        if: steps.build.outputs.success == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-aab-${{ needs.shared-setup.outputs.release_tag }}
-          path: build/app/outputs/bundle/release/app-release.aab
-          retention-days: 30
-
-  # ============================================================================
-  # iOS BUILD JOB - Isolated, Heavy Build Process
-  # ============================================================================
-  ios-build:
-    name: 🏗️ iOS Build
-    needs: [shared-setup, ios-preparation]
-    if: ${{ needs.ios-preparation.outputs.ios_ready == 'true' }}
-    runs-on: macos-15
-    outputs:
-      build_success: ${{ steps.build.outputs.success }}
-      ipa_path: ${{ steps.build.outputs.ipa_path }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download Dependencies & Config
-        uses: actions/download-artifact@v4
-        with:
-          pattern: "*-${{ needs.shared-setup.outputs.release_tag }}"
-        continue-on-error: true
-
-      - name: Verify Artifacts Downloaded
-        run: |
-          echo "🔍 Verifying downloaded artifacts..."
-          if [ ! -d "flutter-dependencies-${{ needs.shared-setup.outputs.release_tag }}" ]; then
-            echo "⚠️  Flutter dependencies artifact not found, will recreate during Flutter setup"
-          else
-            echo "✅ Flutter artifacts verified"
-          fi
+          }
           
-          if [ ! -d "ios-config-${{ needs.shared-setup.outputs.release_tag }}" ]; then
-            echo "⚠️  iOS config artifact not found, will recreate during build"
-          else
-            echo "✅ iOS config artifacts verified"
-          fi
-
-      - name: Select Xcode 16.4
-        run: |
-          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
-
-      - name: Configure Git for private repos
-        run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-
-      - name: Restore Flutter Dependencies (with retry)
-        run: |
-          echo "📦 Restoring Flutter dependencies..."
-          for attempt in 1 2 3; do
-            echo "Restore attempt $attempt/3"
-            if flutter pub get; then
-              echo "✅ Dependencies restored successfully on attempt $attempt"
-              break
-            else
-              echo "❌ Restore attempt $attempt failed"
-              if [ $attempt -eq 3 ]; then
-                echo "❌ Failed to restore dependencies after 3 attempts"
-                exit 1
-              fi
-              sleep 10
-            fi
-          done
-
-      - name: Install CocoaPods dependencies
-        run: |
-          cd ios
-          if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
-            pod install --repo-update
-          else
-            pod install
-          fi
-
-      - name: Build iOS Archive (with retry)
-        id: build
-        run: |
-          echo "🏗️ Building iOS Archive..."
+          # Set provisioning profile UUIDs for main app (Runner target) - Debug, Release, Profile
+          echo "📱 Setting main app provisioning profile UUIDs..."
+          safe_pbxproj_set "97C147061CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
           
-          RELEASE_TAG="${{ needs.shared-setup.outputs.release_tag }}"
-          VERSION="$RELEASE_TAG"
+          # Set development team for main app
+          safe_pbxproj_set "97C147061CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          
+          # Set provisioning profile UUIDs for Share Extension target - Debug, Release, Profile
+          echo "📱 Setting Share Extension provisioning profile UUIDs..."
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
+          
+          # Set development team for Share Extension
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          
+          echo "✅ Provisioning profile UUIDs configured for both main app and Share Extension"
+      
+      - name: Update iOS Version
+        run: |
+          # Extract version info from release tag
+          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
+          VERSION="$RELEASE_TAG"  # Use release tag directly
+          
+          # Convert version to build number (e.g., 3.37.2 -> 303700200)
           IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
           BUILD_NUMBER="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
           
-          # Retry logic for build
-          for attempt in 1 2 3; do
-            echo "Build attempt $attempt/3"
-            
-            if flutter build ipa --release \
-              --export-options-plist=ios/ExportOptions.plist \
-              --build-name="$VERSION" \
-              --build-number="$BUILD_NUMBER" \
-              --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
-              --split-debug-info=build/ios/debug-info \
-              --obfuscate; then
-              
-              IPA_FILE=$(ls build/ios/ipa/*.ipa)
-              echo "success=true" >> $GITHUB_OUTPUT
-              echo "ipa_path=$IPA_FILE" >> $GITHUB_OUTPUT
-              echo "✅ iOS build successful on attempt $attempt"
-              break
-            else
-              echo "❌ Build attempt $attempt failed"
-              if [ $attempt -eq 3 ]; then
-                echo "success=false" >> $GITHUB_OUTPUT
-                exit 1
-              fi
-              sleep 30
-            fi
-          done
-
-      - name: Upload iOS App
-        if: steps.build.outputs.success == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-ipa-${{ needs.shared-setup.outputs.release_tag }}
-          path: build/ios/ipa/*.ipa
-          retention-days: 30
-
-  # ============================================================================
-  # ANDROID DEPLOYMENT JOB - Retryable, Independent
-  # ============================================================================
-  android-deploy:
-    name: 🚀 Android Deploy
-    needs: [shared-setup, android-build]
-    if: ${{ needs.android-build.outputs.build_success == 'true' }}
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download Android AAB
-        uses: actions/download-artifact@v4
-        with:
-          name: android-aab-${{ needs.shared-setup.outputs.release_tag }}
-          path: build/app/outputs/bundle/release/
-
-      - name: Cache Ruby Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            android/vendor/bundle
-            ~/.gem
-            ~/.bundle
-          key: ruby-fastlane-${{ runner.os }}-${{ hashFiles('android/Gemfile.lock') }}
-
-      - name: Setup Ruby for Fastlane
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-          bundler-cache: true
-          working-directory: android
-
-      - name: Setup Google Play Console Service Account
-        run: |
-          echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
-          chmod 600 android/play-console-service-account.json
-
-      - name: Deploy to Google Play Console (with retry)
-        run: |
-          export AAB_FILE_PATH="$(pwd)/build/app/outputs/bundle/release/app-release.aab"
-          cd android
+          echo "📝 Updating iOS version to $VERSION ($BUILD_NUMBER)"
           
-          # Retry logic for deployment
-          for attempt in 1 2 3; do
-            echo "Deployment attempt $attempt/3"
+          # Function to safely set plist value (add if doesn't exist, set if exists)
+          safe_plist_set() {
+            local plist_file="$1"
+            local key="$2"
+            local value="$3"
             
-            if bundle exec fastlane deploy_internal; then
-              echo "✅ Android deployment successful on attempt $attempt"
-              break
+            if /usr/libexec/PlistBuddy -c "Print :$key" "$plist_file" >/dev/null 2>&1; then
+              /usr/libexec/PlistBuddy -c "Set :$key $value" "$plist_file"
             else
-              echo "❌ Deployment attempt $attempt failed"
-              if [ $attempt -eq 3 ]; then
-                exit 1
-              fi
-              sleep 60
+              /usr/libexec/PlistBuddy -c "Add :$key string $value" "$plist_file"
             fi
-          done
-        env:
-          SUPPLY_JSON_KEY_FILE: play-console-service-account.json
-
-  # ============================================================================
-  # iOS DEPLOYMENT JOB - Retryable, Independent
-  # ============================================================================
-  ios-deploy:
-    name: 🚀 iOS Deploy
-    needs: [shared-setup, ios-build]
-    if: ${{ needs.ios-build.outputs.build_success == 'true' }}
-    runs-on: macos-15
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download iOS IPA
-        uses: actions/download-artifact@v4
-        with:
-          name: ios-ipa-${{ needs.shared-setup.outputs.release_tag }}
-          path: build/ios/ipa/
-
-      - name: Cache Ruby Dependencies
+          }
+          
+          # Update Info.plist for main app
+          echo "📱 Updating main app Info.plist..."
+          safe_plist_set "ios/Runner/Info.plist" "CFBundleShortVersionString" "$VERSION"
+          safe_plist_set "ios/Runner/Info.plist" "CFBundleVersion" "$BUILD_NUMBER"
+          
+          # Update Info.plist for share extension
+          echo "📱 Updating share extension Info.plist..."
+          safe_plist_set "ios/Share Extension/Info.plist" "CFBundleShortVersionString" "$VERSION"
+          safe_plist_set "ios/Share Extension/Info.plist" "CFBundleVersion" "$BUILD_NUMBER"
+          
+          echo "✅ iOS version updated successfully for main app and share extension"
+      
+      - name: Build iOS Archive
+        run: |
+          # Extract version info from release tag
+          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
+          VERSION="$RELEASE_TAG"  # Use release tag directly
+          
+          # Convert version to build number (e.g., 3.37.2 -> 303700200)
+          IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+          BUILD_NUMBER="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
+          
+          echo "::notice title=iOS Build::🏗️ Building iOS archive (.ipa)..."
+          flutter build ipa --release \
+            --export-options-plist=ios/ExportOptions.plist \
+            --build-name="$VERSION" \
+            --build-number="$BUILD_NUMBER" \
+            --dart-define=FLUTTER_WEB_AUTO_DETECT=true \
+            --split-debug-info=build/ios/debug-info \
+            --obfuscate
+          
+          # Quick validation of IPA creation
+          if [ ! -f build/ios/ipa/*.ipa ]; then
+            echo "❌ ERROR: IPA file was not created"
+            ls -la build/ios/ipa/ 2>/dev/null || echo "Directory does not exist"
+            exit 1
+          fi
+          
+          echo "✅ IPA created: $(ls build/ios/ipa/*.ipa)"
+          echo "📦 IPA file ready for TestFlight upload"
+          echo "::notice title=iOS Build::✅ IPA archive created successfully"
+          
+          # Verify IPA structure for TestFlight compatibility
+          IPA_FILE=$(ls build/ios/ipa/*.ipa)
+          echo "🔍 Verifying IPA structure..."
+          unzip -l "$IPA_FILE" | head -20
+      
+      # Deploy to TestFlight
+      - name: Cache Ruby Dependencies & Fastlane (iOS)
         uses: actions/cache@v4
         with:
           path: |
             ios/vendor/bundle
             ~/.gem
             ~/.bundle
-          key: ruby-fastlane-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile.lock') }}
-
-      - name: Setup Ruby for Fastlane
+            ios/.bundle
+          key: ruby-fastlane-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile', 'ios/Gemfile.lock') }}-v2
+          restore-keys: |
+            ruby-fastlane-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile') }}-
+            ruby-fastlane-ios-${{ runner.os }}-
+      
+      - name: Setup Ruby for Fastlane (iOS)
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
           bundler-cache: true
           working-directory: ios
-
-      - name: Deploy to TestFlight (with retry)
+      
+      - name: Deploy to TestFlight
         run: |
+          # Find and validate IPA file
           IPA_FILES=(build/ios/ipa/*.ipa)
-          export IPA_FILE_PATH="$(pwd)/${IPA_FILES[0]}"
-          cd ios
+          if [ ! -f "${IPA_FILES[0]}" ]; then
+            echo "❌ ERROR: No IPA files found in build/ios/ipa/"
+            ls -la build/ios/ipa/ || echo "Directory does not exist"
+            exit 1
+          fi
           
-          # Retry logic for deployment
-          for attempt in 1 2 3; do
-            echo "Deployment attempt $attempt/3"
-            
-            if bundle exec fastlane deploy_testflight; then
-              echo "✅ iOS deployment successful on attempt $attempt"
-              break
-            else
-              echo "❌ Deployment attempt $attempt failed"
-              if [ $attempt -eq 3 ]; then
-                exit 1
-              fi
-              sleep 60
-            fi
-          done
+          if [ ${#IPA_FILES[@]} -gt 1 ]; then
+            echo "⚠️  WARNING: Multiple IPA files found, using first one:"
+            printf '%s\n' "${IPA_FILES[@]}"
+          fi
+          
+          export IPA_FILE_PATH="$(pwd)/${IPA_FILES[0]}"
+          echo "📱 Using IPA file: $IPA_FILE_PATH"
+          
+          cd ios
+          bundle exec fastlane deploy_testflight
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+      
+      - name: Upload iOS App (.ipa) - Backup
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('build/ios/ipa/*.ipa') != ''
+        with:
+          name: ios-app-${{ needs.prepare-and-validate.outputs.release_tag }}
+          path: build/ios/ipa/*.ipa
+          retention-days: 30
+      
+      - name: Cleanup Keychain
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+      
+      - name: iOS Build Summary
+        if: always()
+        run: |
+          echo "## 📱 iOS Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle ID** | \`$(plutil -extract CFBundleIdentifier xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || echo '${{ secrets.IOS_BUNDLE_ID }}')\` |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f build/ios/ipa/*.ipa ]; then
+            echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Status** | ❌ IPA creation failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Xcode** | \`$(xcodebuild -version | head -1 | cut -d' ' -f2)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **iOS SDK** | \`$(xcrun --show-sdk-version --sdk iphoneos)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **macOS SDK** | \`$(xcrun --show-sdk-version --sdk macosx)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **CocoaPods** | \`$(pod --version)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Min iOS Version** | \`$(plutil -extract MinimumOSVersion xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || grep 'IPHONEOS_DEPLOYMENT_TARGET' ios/Runner.xcodeproj/project.pbxproj | head -1 | grep -o '[0-9]*\.[0-9]*' || echo '12.0')\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Swift Version** | \`$(xcrun swift --version | head -1 | cut -d' ' -f4)\` |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f build/ios/ipa/*.ipa ]; then
+            echo "✅ **iOS app deployed to TestFlight successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🚀 TestFlight Upload Instructions:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Download the .ipa artifact from this workflow run" >> $GITHUB_STEP_SUMMARY
+            echo "2. Use Xcode → Window → Organizer → Distribute App" >> $GITHUB_STEP_SUMMARY
+            echo "3. Or use Transporter app for direct upload" >> $GITHUB_STEP_SUMMARY
+            echo "4. Or use altool: \`xcrun altool --upload-app -f [path-to-ipa] --type ios -u [apple-id] -p [app-password]\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **iOS build failed during IPA export. Check provisioning profiles and code signing configuration.**" >> $GITHUB_STEP_SUMMARY
+          fi
 
-  # ============================================================================
-  # FINAL SUMMARY JOB
-  # ============================================================================
   build-summary:
-    name: 📊 Build Summary
-    needs: [shared-setup, android-build, ios-build, android-deploy, ios-deploy]
-    if: always() && needs.shared-setup.result == 'success'
+    name: Final Build Summary
+    needs: [prepare-and-validate, build-android, build-ios]
+    if: always() && needs.prepare-and-validate.result == 'success'
     runs-on: ubuntu-latest
     
     steps:
-      - name: Generate Build Summary
+      - name: Generate Final Build Summary
         run: |
-          echo "## 📦 Fragmented Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 Job Status Overview" >> $GITHUB_STEP_SUMMARY
+          echo "::notice title=Build Summary::📊 Generating deployment summary..."
+          
+          echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Shared Setup
-          echo "**🔧 Shared Setup**: " >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.shared-setup.result }}" == "success" ]]; then
-            echo "✅ Completed" >> $GITHUB_STEP_SUMMARY
+          # Create deployment status like in Laravel workflow
+          echo "### 🚀 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Job completion status with visual indicators
+          echo "**Prepare & Validate Build**" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.prepare-and-validate.result }}" == "success" ]]; then
+            echo "```diff" >> $GITHUB_STEP_SUMMARY
+            echo "+ ✅ Completed Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Failed" >> $GITHUB_STEP_SUMMARY
+            echo "```diff" >> $GITHUB_STEP_SUMMARY
+            echo "- ❌ Failed" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Android Pipeline
-          if [[ "${{ needs.shared-setup.outputs.should_build_android }}" == "true" ]]; then
-            echo "**🤖 Android Pipeline**:" >> $GITHUB_STEP_SUMMARY
-            echo "- Build: ${{ needs.android-build.result == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
-            echo "- Deploy: ${{ needs.android-deploy.result == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+          # Android Build Status
+          echo "**Build Android (.aab)**" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_android }}" == "true" ]]; then
+            if [[ "${{ needs.build-android.result }}" == "success" ]]; then
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "+ ✅ Deploying to PROD" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "- ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "**🤖 Android Pipeline**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "```yaml" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # iOS Pipeline
-          if [[ "${{ needs.shared-setup.outputs.should_build_ios }}" == "true" ]]; then
-            echo "**🍎 iOS Pipeline**:" >> $GITHUB_STEP_SUMMARY
-            echo "- Build: ${{ needs.ios-build.result == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
-            echo "- Deploy: ${{ needs.ios-deploy.result == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+          # iOS Build Status  
+          echo "**Build iOS**" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_ios }}" == "true" ]]; then
+            if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "+ ✅ Deploying to PROD" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "```diff" >> $GITHUB_STEP_SUMMARY
+              echo "- ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+              echo "```" >> $GITHUB_STEP_SUMMARY
+            fi
           else
-            echo "**🍎 iOS Pipeline**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "```yaml" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
           echo "### 📋 Build Details" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Release Tag** | \`${{ needs.shared-setup.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Platform** | \`${{ needs.shared-setup.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Workflow** | Fragmented Architecture |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Total Jobs** | 8 (vs 3 in monolithic) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platform** | \`${{ needs.prepare-and-validate.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
           
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🎯 Optimization Benefits" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Granular Failure Recovery**: Re-run only failed jobs" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Parallel Execution**: Android & iOS prep/build run in parallel" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Shared Dependencies**: Common setup cached and reused" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Retry Logic**: Automatic retries for build and deployment steps" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Artifact Persistence**: Intermediate results saved between jobs" >> $GITHUB_STEP_SUMMARY
+          echo "::notice title=Build Summary::✅ Deployment summary completed"

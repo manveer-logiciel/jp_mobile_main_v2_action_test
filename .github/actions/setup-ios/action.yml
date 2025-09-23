@@ -1,0 +1,61 @@
+name: 'Setup iOS Build Environment'
+description: 'Sets up Xcode, CocoaPods, caching, and iOS build configuration'
+
+inputs:
+  xcode-version:
+    description: 'Xcode version to use'
+    required: false
+    default: '16.4'
+  release-tag:
+    description: 'Release tag for version configuration'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Select Xcode Version
+      shell: bash
+      run: |
+        sudo xcode-select --switch /Applications/Xcode_${{ inputs.xcode-version }}.app/Contents/Developer
+        xcodebuild -version
+        echo "Selected Xcode version: $(xcode-select -p)"
+    
+    - name: Cache CocoaPods Dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ios/Pods
+          ~/.cocoapods
+          ~/Library/Caches/CocoaPods
+        key: cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-v4
+        restore-keys: |
+          cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-
+          cocoapods-${{ runner.os }}-
+    
+    - name: Cache Ruby & Fastlane
+      uses: actions/cache@v4
+      with:
+        path: |
+          ios/vendor/bundle
+          ~/.gem
+          ~/.bundle
+        key: ruby-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile.lock') }}-v4
+        restore-keys: |
+          ruby-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile') }}-
+          ruby-ios-${{ runner.os }}-
+    
+    - name: Install CocoaPods dependencies
+      shell: bash
+      run: |
+        cd ios
+        if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
+          pod install --repo-update
+        else
+          pod install
+        fi
+    
+    - name: Setup iOS Environment
+      shell: bash
+      run: |
+        source scripts/setup-ios.sh
+        setup_ios_environment "${{ inputs.release-tag }}"
