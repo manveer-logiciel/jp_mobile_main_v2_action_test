@@ -213,14 +213,14 @@ jobs:
       - name: Configure Android Build Environment
         run: |
           # Create keystore
-          echo "${{ vars.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
           chmod 600 android/keystore.jks
           
           # Create key.properties
           cat > android/key.properties << EOF
-          storePassword=${{ vars.ANDROID_STORE_PASSWORD }}
-          keyPassword=${{ vars.ANDROID_KEY_PASSWORD }}
-          keyAlias=${{ vars.ANDROID_KEY_ALIAS }}
+          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
           storeFile=../keystore.jks
           EOF
           
@@ -498,15 +498,15 @@ jobs:
           }
           
           # Update provisioning profiles in ExportOptions.plist
-          safe_plist_update "com.job.progressapp" "$MAIN_PROFILE_NAME"
-          safe_plist_update "com.job.progressapp.Share-Extension" "$SHARE_PROFILE_NAME"
+          safe_plist_update "${{ secrets.IOS_BUNDLE_ID }}" "$MAIN_PROFILE_NAME"
+          safe_plist_update "${{ secrets.IOS_SHARE_EXTENSION_BUNDLE_ID }}" "$SHARE_PROFILE_NAME"
           
           # Basic bundle ID validation
           MAIN_BUNDLE_ID_FULL=$(security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision | grep -A1 "application-identifier" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           MAIN_BUNDLE_ID=$(echo "$MAIN_BUNDLE_ID_FULL" | sed 's/^[^.]*\.//')
           
-          if [[ "$MAIN_BUNDLE_ID" != "com.job.progressapp" ]]; then
-            echo "❌ ERROR: Bundle ID mismatch. Expected: com.job.progressapp, Found: $MAIN_BUNDLE_ID"
+          if [[ "$MAIN_BUNDLE_ID" != "${{ secrets.IOS_BUNDLE_ID }}" ]]; then
+            echo "❌ ERROR: Bundle ID mismatch. Expected: ${{ secrets.IOS_BUNDLE_ID }}, Found: $MAIN_BUNDLE_ID"
             exit 1
           fi
           
@@ -556,9 +556,9 @@ jobs:
           safe_pbxproj_set "249021D4217E4FDB00AE95B9" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
           
           # Set development team for main app
-          safe_pbxproj_set "97C147061CF9000F007C117D" "DEVELOPMENT_TEAM" "AU42F45627"
-          safe_pbxproj_set "97C147071CF9000F007C117D" "DEVELOPMENT_TEAM" "AU42F45627"
-          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "DEVELOPMENT_TEAM" "AU42F45627"
+          safe_pbxproj_set "97C147061CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "97C147071CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
           
           # Set provisioning profile UUIDs for Share Extension target - Debug, Release, Profile
           echo "📱 Setting Share Extension provisioning profile UUIDs..."
@@ -567,9 +567,9 @@ jobs:
           safe_pbxproj_set "E2B11C5728B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
           
           # Set development team for Share Extension
-          safe_pbxproj_set "E2B11C5528B6384500902FF7" "DEVELOPMENT_TEAM" "AU42F45627"
-          safe_pbxproj_set "E2B11C5628B6384500902FF7" "DEVELOPMENT_TEAM" "AU42F45627"
-          safe_pbxproj_set "E2B11C5728B6384500902FF7" "DEVELOPMENT_TEAM" "AU42F45627"
+          safe_pbxproj_set "E2B11C5528B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "E2B11C5628B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
+          safe_pbxproj_set "E2B11C5728B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
           
           echo "✅ Provisioning profile UUIDs configured for both main app and Share Extension"
       
@@ -714,7 +714,7 @@ jobs:
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Bundle ID** | \`$(plutil -extract CFBundleIdentifier xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || echo 'com.job.progressapp')\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle ID** | \`$(plutil -extract CFBundleIdentifier xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || echo '${{ secrets.IOS_BUNDLE_ID }}')\` |" >> $GITHUB_STEP_SUMMARY
           
           if [ -f build/ios/ipa/*.ipa ]; then
             echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
