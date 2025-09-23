@@ -59,7 +59,16 @@ platform :ios do
 
     # Create API key file for authentication
     api_key_file = "/tmp/AuthKey_#{api_key_id}.p8"
-    File.write(api_key_file, api_key_content)
+    # Decode base64 content if it's encoded
+    decoded_content = if api_key_content.match?(/^[A-Za-z0-9+\/=]+$/) && !api_key_content.start_with?('-----BEGIN')
+      require 'base64'
+      UI.message("🔓 Decoding base64 API key content...")
+      Base64.decode64(api_key_content)
+    else
+      UI.message("📝 Using API key content as-is (already in PEM format)")
+      api_key_content
+    end
+    File.write(api_key_file, decoded_content)
     
     begin
       # Upload to TestFlight
@@ -118,7 +127,16 @@ platform :ios do
 
     # Create API key file for authentication
     api_key_file = "/tmp/AuthKey_#{api_key_id}.p8"
-    File.write(api_key_file, api_key_content)
+    # Decode base64 content if it's encoded
+    decoded_content = if api_key_content.match?(/^[A-Za-z0-9+\/=]+$/) && !api_key_content.start_with?('-----BEGIN')
+      require 'base64'
+      UI.message("🔓 Decoding base64 API key content...")
+      Base64.decode64(api_key_content)
+    else
+      UI.message("📝 Using API key content as-is (already in PEM format)")
+      api_key_content
+    end
+    File.write(api_key_file, decoded_content)
     
     begin
       # Upload to TestFlight and submit for review
