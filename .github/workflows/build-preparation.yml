@@ -645,9 +645,42 @@ jobs:
           echo "🔍 Verifying IPA structure..."
           unzip -l "$IPA_FILE" | head -20
       
-      - name: Upload iOS App (.ipa)
+      # Deploy to TestFlight
+      - name: Cache Ruby Dependencies & Fastlane (iOS)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/vendor/bundle
+            ~/.gem
+            ~/.bundle
+            ios/.bundle
+          key: ruby-fastlane-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile', 'ios/Gemfile.lock') }}-v2
+          restore-keys: |
+            ruby-fastlane-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile') }}-
+            ruby-fastlane-ios-${{ runner.os }}-
+      
+      - name: Setup Ruby for Fastlane (iOS)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ios
+      
+      - name: Deploy to TestFlight
+        run: |
+          export IPA_FILE_PATH="$(pwd)/build/ios/ipa/$(ls build/ios/ipa/*.ipa | head -1 | xargs basename)"
+          cd ios
+          bundle exec fastlane deploy_testflight
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+      
+      - name: Upload iOS App (.ipa) - Backup
         uses: actions/upload-artifact@v4
-        if: success() && hashFiles('build/ios/ipa/*.ipa') != ''
+        if: always() && hashFiles('build/ios/ipa/*.ipa') != ''
         with:
           name: ios-app-${{ needs.prepare-and-validate.outputs.release_tag }}
           path: build/ios/ipa/*.ipa
@@ -689,7 +722,7 @@ jobs:
           
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f build/ios/ipa/*.ipa ]; then
-            echo "✅ **iOS app (.ipa) ready for TestFlight upload**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **iOS app deployed to TestFlight successfully**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 🚀 TestFlight Upload Instructions:" >> $GITHUB_STEP_SUMMARY
             echo "1. Download the .ipa artifact from this workflow run" >> $GITHUB_STEP_SUMMARY

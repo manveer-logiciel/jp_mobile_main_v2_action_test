@@ -1,0 +1,15 @@
+# app_identifier is used for deploying the app via fastlane
+app_identifier("com.job.progressapp") # The bundle identifier of your app
+
+# Apple ID for App Store Connect
+apple_id(ENV['APPLE_ID']) # Your Apple ID
+
+# Team ID for App Store Connect  
+team_id(ENV['APPLE_TEAM_ID']) # Your Team ID
+
+# iTunes Connect Team ID (if different from Development Team ID)
+itunes_connect_team_id(ENV['APPLE_TEAM_ID'])
+
+# For more information about the Appfile, see:
+#     https://docs.fastlane.tools/advanced/#appfile
+

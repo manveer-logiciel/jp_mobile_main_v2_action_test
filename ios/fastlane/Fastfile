@@ -1,0 +1,116 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Deploy a new version to TestFlight"
+  lane :deploy_testflight do
+    # Get IPA file path from environment variable or use default relative path
+    ipa_path = ENV['IPA_FILE_PATH'] || "../build/ios/ipa/*.ipa"
+    
+    # Find the actual IPA file if using glob pattern
+    if ipa_path.include?("*")
+      ipa_files = Dir.glob(ipa_path)
+      unless ipa_files.any?
+        UI.user_error!("No IPA file found matching pattern: #{ipa_path}")
+      end
+      ipa_path = ipa_files.first
+    end
+    
+    # Verify IPA file exists
+    unless File.exist?(ipa_path)
+      UI.user_error!("IPA file not found at #{ipa_path}")
+    end
+
+    # Setup App Store Connect API authentication
+    app_store_connect_api_key(
+      key_id: ENV['APP_STORE_CONNECT_API_KEY_ID'],
+      issuer_id: ENV['APP_STORE_CONNECT_API_ISSUER_ID'],
+      key_content: ENV['APP_STORE_CONNECT_API_KEY']
+    )
+
+    # Upload to TestFlight
+    upload_to_testflight(
+      ipa: ipa_path,
+      skip_submission: true,  # Don't submit for review automatically
+      skip_waiting_for_build_processing: false,  # Wait for processing to complete
+      apple_id: ENV['APPLE_ID'],
+      app_identifier: 'com.job.progressapp',
+      team_id: ENV['APPLE_TEAM_ID']
+    )
+
+    UI.success("Successfully uploaded IPA to TestFlight! ✈️")
+    UI.message("The build will be available for testing once it finishes processing.")
+  end
+
+  desc "Deploy to TestFlight and submit for review"
+  lane :deploy_testflight_review do
+    # Get IPA file path from environment variable or use default relative path
+    ipa_path = ENV['IPA_FILE_PATH'] || "../build/ios/ipa/*.ipa"
+    
+    # Find the actual IPA file if using glob pattern
+    if ipa_path.include?("*")
+      ipa_files = Dir.glob(ipa_path)
+      unless ipa_files.any?
+        UI.user_error!("No IPA file found matching pattern: #{ipa_path}")
+      end
+      ipa_path = ipa_files.first
+    end
+    
+    # Verify IPA file exists
+    unless File.exist?(ipa_path)
+      UI.user_error!("IPA file not found at #{ipa_path}")
+    end
+
+    # Setup App Store Connect API authentication
+    app_store_connect_api_key(
+      key_id: ENV['APP_STORE_CONNECT_API_KEY_ID'],
+      issuer_id: ENV['APP_STORE_CONNECT_API_ISSUER_ID'],
+      key_content: ENV['APP_STORE_CONNECT_API_KEY']
+    )
+
+    # Upload to TestFlight and submit for review
+    upload_to_testflight(
+      ipa: ipa_path,
+      skip_submission: false,  # Submit for review
+      skip_waiting_for_build_processing: false,
+      apple_id: ENV['APPLE_ID'],
+      app_identifier: 'com.job.progressapp',
+      team_id: ENV['APPLE_TEAM_ID'],
+      beta_app_review_info: {
+        contact_email: ENV['TESTFLIGHT_CONTACT_EMAIL'],
+        contact_first_name: ENV['TESTFLIGHT_CONTACT_FIRST_NAME'],
+        contact_last_name: ENV['TESTFLIGHT_CONTACT_LAST_NAME'],
+        contact_phone: ENV['TESTFLIGHT_CONTACT_PHONE']
+      }
+    )
+
+    UI.success("Successfully uploaded IPA to TestFlight and submitted for review! 🚀")
+  end
+
+  desc "Download and install certificates and provisioning profiles"
+  lane :setup_certificates do
+    # This lane can be used to download certificates and profiles if needed
+    # For GitHub Actions, we handle this manually in the workflow
+    UI.message("Certificate setup is handled in GitHub Actions workflow")
+  end
+
+  error do |lane, exception|
+    UI.error("Error in lane #{lane}: #{exception.message}")
+    # You can add custom error handling here, like sending notifications
+  end
+end
+
