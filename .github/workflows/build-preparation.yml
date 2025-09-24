@@ -46,6 +46,8 @@ jobs:
       should_build_android: ${{ steps.validation.outputs.should_build_android }}
       should_build_ios: ${{ steps.validation.outputs.should_build_ios }}
       deploy_to_testing: ${{ steps.validation.outputs.deploy_to_testing }}
+      version_name: ${{ steps.validation.outputs.version_name }}
+      build_number: ${{ steps.validation.outputs.build_number }}
     
     steps:
       - name: Checkout code
@@ -157,6 +159,10 @@ jobs:
           BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
           
           echo "📝 Version from tag ${{ inputs.release_tag }}: $VERSION_NAME (build: $BUILD_NUMBER)"
+          
+          # Set version outputs
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           
           # Basic validation - build number should be a positive integer
           if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || [[ $BUILD_NUMBER -le 0 ]]; then
@@ -517,25 +523,8 @@ jobs:
       
       - name: Android Build Summary
         run: |
-          echo "## 🤖 Android Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Bundle Size** | \`$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Build Environment" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Java** | \`${{ env.JAVA_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Gradle** | \`$(cd android && ./gradlew --version | grep 'Gradle' | head -1 | cut -d' ' -f2)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Kotlin** | \`$(cd android && ./gradlew --version | grep 'Kotlin:' | cut -d' ' -f9)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Target SDK** | \`$(grep 'compileSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Min SDK** | \`$(grep 'minSdk' android/app/build.gradle | head -1 | grep -o '[0-9]*')\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Android App Bundle built successfully**" >> $GITHUB_STEP_SUMMARY
+          BUNDLE_SIZE=$(du -h build/app/outputs/bundle/release/app-release.aab | cut -f1)
+          echo "::notice title=Android Build::✅ v${{ needs.prepare-and-validate.outputs.version_name }}+${{ needs.prepare-and-validate.outputs.build_number }} built successfully ($BUNDLE_SIZE)"
 
   deploy-android:
     name: Deploy Android to Testing
@@ -932,37 +921,11 @@ jobs:
       - name: iOS Build Summary
         if: always()
         run: |
-          echo "## 📱 iOS Build Status" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Bundle ID** | \`$(plutil -extract CFBundleIdentifier xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || echo '${{ secrets.IOS_BUNDLE_ID }}')\` |" >> $GITHUB_STEP_SUMMARY
-          
           if [ -f build/ios/ipa/*.ipa ]; then
-            echo "| **IPA Size** | \`$(du -h build/ios/ipa/*.ipa | cut -f1)\` |" >> $GITHUB_STEP_SUMMARY
+            IPA_SIZE=$(du -h build/ios/ipa/*.ipa | cut -f1)
+            echo "::notice title=iOS Build::✅ v${{ needs.prepare-and-validate.outputs.version_name }}+${{ needs.prepare-and-validate.outputs.build_number }} built successfully ($IPA_SIZE)"
           else
-            echo "| **Status** | ❌ IPA creation failed |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Build Environment" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Xcode** | \`$(xcodebuild -version | head -1 | cut -d' ' -f2)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **iOS SDK** | \`$(xcrun --show-sdk-version --sdk iphoneos)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **macOS SDK** | \`$(xcrun --show-sdk-version --sdk macosx)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CocoaPods** | \`$(pod --version)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Min iOS Version** | \`$(plutil -extract MinimumOSVersion xml1 -o - ios/Runner/Info.plist | xmllint --xpath "//string/text()" - 2>/dev/null || grep 'IPHONEOS_DEPLOYMENT_TARGET' ios/Runner.xcodeproj/project.pbxproj | head -1 | grep -o '[0-9]*\.[0-9]*' || echo '12.0')\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Swift Version** | \`$(xcrun swift --version | head -1 | cut -d' ' -f4)\` |" >> $GITHUB_STEP_SUMMARY
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f build/ios/ipa/*.ipa ]; then
-            echo "✅ **iOS app built successfully**" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **iOS build failed during IPA export. Check provisioning profiles and code signing configuration.**" >> $GITHUB_STEP_SUMMARY
+            echo "::error title=iOS Build::❌ v${{ needs.prepare-and-validate.outputs.version_name }}+${{ needs.prepare-and-validate.outputs.build_number }} build failed"
           fi
 
   deploy-ios:
@@ -1047,113 +1010,94 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
       - name: Generate Final Build Summary
         run: |
-          echo "::notice title=Build Summary::📊 Generating deployment summary..."
+          # Extract version info from the tagged release
+          PUBSPEC_VERSION=$(git show ${{ needs.prepare-and-validate.outputs.release_tag }}:pubspec.yaml | grep '^version:' | cut -d' ' -f2)
+          VERSION_NAME=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
           
-          echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Release Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Create deployment status like in Laravel workflow
-          echo "### 🚀 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          # Version Information
+          echo "### 📋 Version Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **🏷️ Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **📱 Version Name** | \`$VERSION_NAME\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **🔢 Build Number** | \`$BUILD_NUMBER\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **🎯 Platform** | \`${{ needs.prepare-and-validate.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **🚀 Deploy to Testing** | \`${{ needs.prepare-and-validate.outputs.deploy_to_testing }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Job completion status with visual indicators
-          echo "**Prepare & Validate Build**" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.prepare-and-validate.result }}" == "success" ]]; then
-            echo "```diff" >> $GITHUB_STEP_SUMMARY
-            echo "+ ✅ Completed Successfully" >> $GITHUB_STEP_SUMMARY
-            echo "```" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "```diff" >> $GITHUB_STEP_SUMMARY
-            echo "- ❌ Failed" >> $GITHUB_STEP_SUMMARY
-            echo "```" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
+          # Build Status
+          echo "### 🔨 Build & Deploy Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           
-          # Android Build Status
-          echo "**Build Android (.aab)**" >> $GITHUB_STEP_SUMMARY
+          # Android Status
           if [[ "${{ needs.prepare-and-validate.outputs.should_build_android }}" == "true" ]]; then
             if [[ "${{ needs.build-android.result }}" == "success" ]]; then
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "+ ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
+              ANDROID_STATUS="✅ Built Successfully"
             else
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "- ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
+              ANDROID_STATUS="❌ Build Failed"
+            fi
+            
+            if [[ "${{ needs.prepare-and-validate.outputs.deploy_to_testing }}" == "true" ]]; then
+              if [[ "${{ needs.deploy-android.result }}" == "success" ]]; then
+                ANDROID_DEPLOY="✅ Deployed to Play Console Internal"
+              else
+                ANDROID_DEPLOY="❌ Deployment Failed"
+              fi
+            else
+              ANDROID_DEPLOY="⏭️ Deployment Skipped"
             fi
           else
-            echo "```yaml" >> $GITHUB_STEP_SUMMARY
-            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
-            echo "```" >> $GITHUB_STEP_SUMMARY
+            ANDROID_STATUS="⏭️ Build Skipped"
+            ANDROID_DEPLOY="⏭️ Deployment Skipped"
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Android Deployment Status
-          echo "**Deploy Android to Testing**" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.prepare-and-validate.outputs.should_build_android }}" == "true" && "${{ needs.prepare-and-validate.outputs.deploy_to_testing }}" == "true" ]]; then
-            if [[ "${{ needs.deploy-android.result }}" == "success" ]]; then
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "+ ✅ Deployed to Google Play Internal Testing" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "- ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "```yaml" >> $GITHUB_STEP_SUMMARY
-            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
-            echo "```" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # iOS Build Status  
-          echo "**Build iOS**" >> $GITHUB_STEP_SUMMARY
+          # iOS Status  
           if [[ "${{ needs.prepare-and-validate.outputs.should_build_ios }}" == "true" ]]; then
             if [[ "${{ needs.build-ios.result }}" == "success" ]]; then
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "+ ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
+              IOS_STATUS="✅ Built Successfully"
             else
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "- ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
+              IOS_STATUS="❌ Build Failed"
+            fi
+            
+            if [[ "${{ needs.prepare-and-validate.outputs.deploy_to_testing }}" == "true" ]]; then
+              if [[ "${{ needs.deploy-ios.result }}" == "success" ]]; then
+                IOS_DEPLOY="✅ Deployed to TestFlight"
+              else
+                IOS_DEPLOY="❌ Deployment Failed"
+              fi
+            else
+              IOS_DEPLOY="⏭️ Deployment Skipped"
             fi
           else
-            echo "```yaml" >> $GITHUB_STEP_SUMMARY
-            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
-            echo "```" >> $GITHUB_STEP_SUMMARY
+            IOS_STATUS="⏭️ Build Skipped"
+            IOS_DEPLOY="⏭️ Deployment Skipped"
           fi
+          
+          echo "| **🤖 Android Build** | $ANDROID_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| **🤖 Android Deploy** | $ANDROID_DEPLOY |" >> $GITHUB_STEP_SUMMARY
+          echo "| **📱 iOS Build** | $IOS_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| **📱 iOS Deploy** | $IOS_DEPLOY |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # iOS Deployment Status
-          echo "**Deploy iOS to Testing**" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ needs.prepare-and-validate.outputs.should_build_ios }}" == "true" && "${{ needs.prepare-and-validate.outputs.deploy_to_testing }}" == "true" ]]; then
-            if [[ "${{ needs.deploy-ios.result }}" == "success" ]]; then
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "+ ✅ Deployed to TestFlight" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "```diff" >> $GITHUB_STEP_SUMMARY
-              echo "- ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
-              echo "```" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "```yaml" >> $GITHUB_STEP_SUMMARY
-            echo "⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
-            echo "```" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
+          # Build Environment Summary
+          echo "### ⚙️ Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Java** | \`${{ env.JAVA_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
           
-          echo "### 📋 Build Details" >> $GITHUB_STEP_SUMMARY
-          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Platform** | \`${{ needs.prepare-and-validate.outputs.build_platform }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Deploy to Testing** | \`${{ needs.prepare-and-validate.outputs.deploy_to_testing }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
-          
-          echo "::notice title=Build Summary::✅ Deployment summary completed"
+          echo "::notice title=Build Summary::📊 Release ${{ needs.prepare-and-validate.outputs.release_tag }} build completed"
