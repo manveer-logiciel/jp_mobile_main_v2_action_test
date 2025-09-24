@@ -263,6 +263,17 @@ jobs:
           EOF
           
           echo "✅ Android build environment configured"
+      
+      # Upload configured Android environment for build job
+      - name: Upload Android Environment
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-environment
+          path: |
+            android/keystore.jks
+            android/key.properties
+            android/local.properties
+          retention-days: 1
 
   android-build:
     name: 🏗️ Android App Bundle Build
@@ -317,28 +328,11 @@ jobs:
             android-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}-
             android-${{ runner.os }}-
       
-      - name: Configure Android Build Environment
-        run: |
-          # Recreate keystore and configuration files directly from secrets
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
-          chmod 600 android/keystore.jks
-          
-          # Create key.properties
-          cat > android/key.properties << EOF
-          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          storeFile=../keystore.jks
-          EOF
-          
-          # Update local.properties
-          cat > android/local.properties << EOF
-          flutter.versionName=${{ needs.validate-inputs.outputs.release_tag }}
-          flutter.versionCode=${{ needs.validate-inputs.outputs.version_code }}
-          flutter.sdk=$FLUTTER_ROOT
-          EOF
-          
-          echo "✅ Android build environment configured directly from secrets"
+      - name: Download Android Environment
+        uses: actions/download-artifact@v4
+        with:
+          name: android-environment
+          path: android/
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -537,14 +531,14 @@ jobs:
           fi
           echo "::notice title=iOS Setup::✅ CocoaPods dependencies installed"
 
-  ios-build:
-    name: 🏗️ iOS IPA Build
+  ios-code-signing:
+    name: 🔐 iOS Code Signing Setup
     needs: [validate-inputs, ios-setup]
     runs-on: macos-15
     permissions:
       contents: read
     outputs:
-      ipa-path: ${{ steps.build.outputs.ipa-path }}
+      keychain-path: ${{ steps.signing.outputs.keychain-path }}
       
     steps:
       - name: Checkout code
@@ -553,12 +547,8 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
       
-      - name: Select Xcode 16.4
-        run: |
-          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
-          xcodebuild -version
-      
-      - name: Setup iOS Code Signing (Direct from Secrets)
+      - name: Setup iOS Code Signing
+        id: signing
         env:
           IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
@@ -566,8 +556,6 @@ jobs:
           IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
-          echo "🔐 Setting up iOS code signing directly from secrets..."
-          
           # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
@@ -594,12 +582,58 @@ jobs:
           # Extract profile information
           MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
           SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
+          
+          # Validate extracted values
+          if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$MAIN_PROFILE_NAME" ]] || [[ -z "$SHARE_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_NAME" ]]; then
+            echo "❌ ERROR: Failed to extract provisioning profile information"
+            exit 1
+          fi
           
           # Install profiles
           cp $MAIN_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$MAIN_PROFILE_UUID.mobileprovision
           cp $SHARE_PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/$SHARE_PROFILE_UUID.mobileprovision
           
-          echo "✅ iOS code signing configured directly from secrets (no artifacts created)"
+          # Output keychain path for later use
+          echo "keychain-path=$KEYCHAIN_PATH" >> $GITHUB_OUTPUT
+          
+          echo "✅ iOS code signing setup complete"
+          echo "::notice title=iOS Code Signing::🔐 Code signing configured successfully"
+      
+      - name: Upload Signing Configuration
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-signing-config
+          path: ~/Library/MobileDevice/Provisioning\ Profiles/
+          retention-days: 1
+
+  ios-build:
+    name: 🏗️ iOS IPA Build
+    needs: [validate-inputs, ios-setup, ios-code-signing]
+    runs-on: macos-15
+    permissions:
+      contents: read
+    outputs:
+      ipa-path: ${{ steps.build.outputs.ipa-path }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+      
+      - name: Select Xcode 16.4
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+      
+      - name: Download Signing Configuration
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-signing-config
+          path: ~/Library/MobileDevice/Provisioning\ Profiles/
       
       - name: Restore Flutter Cache
         uses: actions/cache@v4
@@ -1031,7 +1065,8 @@ jobs:
           echo "| **android-build** | Build .aab | android-setup | Isolated build process |" >> $GITHUB_STEP_SUMMARY
           echo "| **android-deploy** | Deploy to Play Console | android-build | Separate deployment |" >> $GITHUB_STEP_SUMMARY
           echo "| **ios-setup** | iOS environment | validate-inputs, shared-flutter-setup | Parallel iOS prep |" >> $GITHUB_STEP_SUMMARY
-          echo "| **ios-build** | Build .ipa + signing | ios-setup | Secure inline signing |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ios-code-signing** | Code signing setup | ios-setup | Isolated signing |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ios-build** | Build .ipa | ios-setup, ios-code-signing | Isolated build process |" >> $GITHUB_STEP_SUMMARY
           echo "| **ios-deploy** | Deploy to TestFlight | ios-build | Separate deployment |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
@@ -1043,7 +1078,7 @@ jobs:
           echo "| **Version Code** | \`${{ needs.validate-inputs.outputs.version_code }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Total Fragments** | \`8 jobs\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total Fragments** | \`9 jobs\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           echo "### 🎯 Sharding Benefits Achieved" >> $GITHUB_STEP_SUMMARY
