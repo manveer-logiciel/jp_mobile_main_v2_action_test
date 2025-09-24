@@ -212,6 +212,179 @@ jobs:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         
+      - name: Validate Required Secrets
+        run: |
+          echo "🔐 Validating required secrets..."
+          
+          # Track validation results
+          VALIDATION_FAILED=false
+          
+          # Common secrets (always required)
+          echo "📝 Checking common secrets..."
+          
+          if [[ -z "${{ secrets.GITHUB_TOKEN }}" ]]; then
+            echo "❌ ERROR: GITHUB_TOKEN is missing"
+            VALIDATION_FAILED=true
+          else
+            echo "✅ GITHUB_TOKEN is set"
+          fi
+          
+          if [[ -z "${{ secrets.RELEASE_PASSWORD }}" ]]; then
+            echo "❌ ERROR: RELEASE_PASSWORD is missing"
+            VALIDATION_FAILED=true
+          else
+            echo "✅ RELEASE_PASSWORD is set"
+          fi
+          
+          if [[ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]]; then
+            echo "⚠️  WARNING: PRIVATE_REPO_TOKEN is missing (using GITHUB_TOKEN as fallback)"
+          else
+            echo "✅ PRIVATE_REPO_TOKEN is set"
+          fi
+          
+          # Android-specific secrets
+          if [[ "${{ inputs.build_platform }}" == "Android" || "${{ inputs.build_platform }}" == "Both" ]]; then
+            echo "🤖 Checking Android secrets..."
+            
+            if [[ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]]; then
+              echo "❌ ERROR: ANDROID_KEYSTORE_BASE64 is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ ANDROID_KEYSTORE_BASE64 is set"
+            fi
+            
+            if [[ -z "${{ secrets.ANDROID_STORE_PASSWORD }}" ]]; then
+              echo "❌ ERROR: ANDROID_STORE_PASSWORD is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ ANDROID_STORE_PASSWORD is set"
+            fi
+            
+            if [[ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ]]; then
+              echo "❌ ERROR: ANDROID_KEY_PASSWORD is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ ANDROID_KEY_PASSWORD is set"
+            fi
+            
+            if [[ -z "${{ secrets.ANDROID_KEY_ALIAS }}" ]]; then
+              echo "❌ ERROR: ANDROID_KEY_ALIAS is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ ANDROID_KEY_ALIAS is set"
+            fi
+            
+            if [[ -z "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" ]]; then
+              echo "❌ ERROR: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is set"
+            fi
+          fi
+          
+          # iOS-specific secrets
+          if [[ "${{ inputs.build_platform }}" == "iOS" || "${{ inputs.build_platform }}" == "Both" ]]; then
+            echo "🍎 Checking iOS secrets..."
+            
+            if [[ -z "${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}" ]]; then
+              echo "❌ ERROR: IOS_DISTRIBUTION_CERTIFICATE_BASE64 is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ IOS_DISTRIBUTION_CERTIFICATE_BASE64 is set"
+            fi
+            
+            if [[ -z "${{ secrets.IOS_CERTIFICATE_PASSWORD }}" ]]; then
+              echo "❌ ERROR: IOS_CERTIFICATE_PASSWORD is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ IOS_CERTIFICATE_PASSWORD is set"
+            fi
+            
+            if [[ -z "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" ]]; then
+              echo "❌ ERROR: IOS_PROVISIONING_PROFILE_BASE64 is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ IOS_PROVISIONING_PROFILE_BASE64 is set"
+            fi
+            
+            if [[ -z "${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}" ]]; then
+              echo "❌ ERROR: IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 is set"
+            fi
+            
+            if [[ -z "${{ secrets.IOS_KEYCHAIN_PASSWORD }}" ]]; then
+              echo "❌ ERROR: IOS_KEYCHAIN_PASSWORD is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ IOS_KEYCHAIN_PASSWORD is set"
+            fi
+            
+            if [[ -z "${{ secrets.IOS_BUNDLE_ID }}" ]]; then
+              echo "❌ ERROR: IOS_BUNDLE_ID is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ IOS_BUNDLE_ID is set"
+            fi
+            
+            if [[ -z "${{ secrets.IOS_SHARE_EXTENSION_BUNDLE_ID }}" ]]; then
+              echo "❌ ERROR: IOS_SHARE_EXTENSION_BUNDLE_ID is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ IOS_SHARE_EXTENSION_BUNDLE_ID is set"
+            fi
+            
+            if [[ -z "${{ secrets.APPLE_TEAM_ID }}" ]]; then
+              echo "❌ ERROR: APPLE_TEAM_ID is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ APPLE_TEAM_ID is set"
+            fi
+            
+            if [[ -z "${{ secrets.APPLE_ID }}" ]]; then
+              echo "❌ ERROR: APPLE_ID is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ APPLE_ID is set"
+            fi
+            
+            if [[ -z "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" ]]; then
+              echo "❌ ERROR: APP_STORE_CONNECT_API_KEY_ID is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ APP_STORE_CONNECT_API_KEY_ID is set"
+            fi
+            
+            if [[ -z "${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}" ]]; then
+              echo "❌ ERROR: APP_STORE_CONNECT_API_ISSUER_ID is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ APP_STORE_CONNECT_API_ISSUER_ID is set"
+            fi
+            
+            if [[ -z "${{ secrets.APP_STORE_CONNECT_API_KEY }}" ]]; then
+              echo "❌ ERROR: APP_STORE_CONNECT_API_KEY is missing"
+              VALIDATION_FAILED=true
+            else
+              echo "✅ APP_STORE_CONNECT_API_KEY is set"
+            fi
+          fi
+          
+          # Final validation result
+          if [[ "$VALIDATION_FAILED" == "true" ]]; then
+            echo ""
+            echo "💥 SECRETS VALIDATION FAILED"
+            echo "❌ One or more required secrets are missing"
+            echo "📝 Please add the missing secrets to GitHub repository settings"
+            echo "🔗 Go to: Settings → Secrets and variables → Actions"
+            exit 1
+          else
+            echo ""
+            echo "🎉 ALL SECRETS VALIDATION PASSED"
+            echo "✅ All required secrets are properly configured"
+          fi
+      
       - name: Validation Complete
         run: |
           echo "::notice title=Preparation Complete::✅ Build validation completed successfully"
