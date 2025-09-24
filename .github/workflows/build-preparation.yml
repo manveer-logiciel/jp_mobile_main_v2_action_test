@@ -216,194 +216,10 @@ jobs:
         run: |
           echo "::notice title=Preparation Complete::✅ Build validation completed successfully"
 
-  setup-environment:
-    name: Setup Build Environment
-    needs: prepare-and-validate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    outputs:
-      flutter-cache-key: ${{ steps.cache-keys.outputs.flutter-cache-key }}
-      android-cache-key: ${{ steps.cache-keys.outputs.android-cache-key }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
-      
-      - name: Generate Cache Keys
-        id: cache-keys
-        run: |
-          # Generate consistent cache keys for all jobs
-          FLUTTER_KEY="flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}"
-          ANDROID_KEY="android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/*.kt') }}-v2"
-          
-          echo "flutter-cache-key=$FLUTTER_KEY" >> $GITHUB_OUTPUT
-          echo "android-cache-key=$ANDROID_KEY" >> $GITHUB_OUTPUT
-          
-          echo "🔑 Flutter cache key: $FLUTTER_KEY"
-          echo "🔑 Android cache key: $ANDROID_KEY"
-      
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
-      
-      - name: Cache Flutter Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            .dart_tool
-          key: ${{ steps.cache-keys.outputs.flutter-cache-key }}-android
-          restore-keys: |
-            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
-            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
-            flutter-${{ runner.os }}-
-      
-      - name: Cache Android Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.gradle/daemon
-            ~/.android
-            android/.gradle
-            android/app/.gradle
-            android/build
-            ~/.konan
-            ~/.kotlin
-            /home/runner/.gradle/caches/transforms-*
-            /home/runner/.gradle/caches/build-cache-*
-          key: ${{ steps.cache-keys.outputs.android-cache-key }}
-          restore-keys: |
-            android-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}-
-            android-${{ runner.os }}-
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-      
-      - name: Configure Git for private repos
-        run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-      
-      - name: Get Flutter dependencies
-        run: flutter pub get
-      
-      - name: Environment Setup Complete
-        run: |
-          echo "::notice title=Environment Setup::✅ Build environment setup completed successfully"
-
-  setup-ios-environment:
-    name: Setup iOS Build Environment
-    needs: prepare-and-validate
-    if: ${{ needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
-    runs-on: macos-15
-    permissions:
-      contents: read
-      packages: read
-    outputs:
-      flutter-cache-key: ${{ steps.cache-keys.outputs.flutter-cache-key }}
-      cocoapods-cache-key: ${{ steps.cache-keys.outputs.cocoapods-cache-key }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
-      
-      - name: Generate Cache Keys
-        id: cache-keys
-        run: |
-          # Generate consistent cache keys for iOS jobs
-          FLUTTER_KEY="flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}"
-          COCOAPODS_KEY="cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj') }}-v2"
-          
-          echo "flutter-cache-key=$FLUTTER_KEY" >> $GITHUB_OUTPUT
-          echo "cocoapods-cache-key=$COCOAPODS_KEY" >> $GITHUB_OUTPUT
-          
-          echo "🔑 Flutter cache key: $FLUTTER_KEY"
-          echo "🔑 CocoaPods cache key: $COCOAPODS_KEY"
-      
-      - name: Cache Flutter Dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            ~/Library/Caches/dart-pub
-            .dart_tool
-          key: ${{ steps.cache-keys.outputs.flutter-cache-key }}-ios
-          restore-keys: |
-            flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
-            flutter-macOS-${{ env.FLUTTER_VERSION }}-
-            flutter-macOS-
-      
-      - name: Cache CocoaPods & iOS Build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ios/Pods
-            ~/.cocoapods
-            ~/Library/Caches/CocoaPods
-            ios/build
-            ios/.symlinks
-          key: ${{ steps.cache-keys.outputs.cocoapods-cache-key }}
-          restore-keys: |
-            cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-
-            cocoapods-${{ runner.os }}-
-      
-      - name: Select Xcode 16.4
-        run: |
-          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
-          xcodebuild -version
-          echo "Selected Xcode version:"
-          xcode-select -p
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-      
-      - name: Configure Git for private repos
-        run: |
-          TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-      
-      - name: Get Flutter dependencies
-        run: flutter pub get
-      
-      - name: Install CocoaPods dependencies
-        run: |
-          echo "::notice title=iOS Setup::📦 Installing CocoaPods dependencies..."
-          cd ios
-          # Only run repo update if cache miss or force update needed
-          if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
-            pod install --repo-update
-          else
-            pod install
-          fi
-          echo "::notice title=iOS Setup::✅ CocoaPods dependencies installed"
-      
-      - name: iOS Environment Setup Complete
-        run: |
-          echo "::notice title=iOS Environment Setup::✅ iOS build environment setup completed successfully"
 
   build-android:
     name: Build Android (.aab)
-    needs: [prepare-and-validate, setup-environment]
+    needs: prepare-and-validate
     if: ${{ needs.prepare-and-validate.outputs.should_build_android == 'true' }}
     runs-on: ubuntu-latest  # Use Ubuntu for Android builds - much faster!
     permissions:
@@ -424,54 +240,45 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
       
-      - name: Restore Flutter Dependencies Cache
-        uses: actions/cache/restore@v4
+      - name: Cache Flutter Dependencies
+        uses: actions/cache@v4
         with:
           path: |
             ~/.pub-cache
             .dart_tool
-          key: ${{ needs.setup-environment.outputs.flutter-cache-key }}-android
-          fail-on-cache-miss: true
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}
+          restore-keys: |
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+            flutter-${{ runner.os }}-
       
-      - name: Restore Android Dependencies Cache
-        uses: actions/cache/restore@v4
+      - name: Cache Android Dependencies
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            ~/.gradle/daemon
             ~/.android
             android/.gradle
-            android/app/.gradle
-            android/build
-            ~/.konan
-            ~/.kotlin
-            /home/runner/.gradle/caches/transforms-*
-            /home/runner/.gradle/caches/build-cache-*
-          key: ${{ needs.setup-environment.outputs.android-cache-key }}
-          fail-on-cache-miss: true
+          key: android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-v3
+          restore-keys: |
+            android-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}-
+            android-${{ runner.os }}-
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
-          cache: true
+          cache: false
       
       - name: Configure Git for private repos
         run: |
           TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
-      # Verify Flutter dependencies are available
-      - name: Verify Flutter dependencies
-        run: |
-          if [ ! -d ".dart_tool" ]; then
-            echo "⚠️ Flutter dependencies not found in cache, running pub get..."
-            flutter pub get
-          else
-            echo "✅ Flutter dependencies restored from cache"
-          fi
+      - name: Get Flutter dependencies
+        run: flutter pub get
       
       # Batch Android configuration for better performance
       - name: Configure Android Build Environment
@@ -548,18 +355,6 @@ jobs:
           name: android-app-bundle-${{ needs.prepare-and-validate.outputs.release_tag }}
           path: build/app/outputs/bundle/release/
       
-      - name: Cache Ruby Dependencies & Fastlane
-        uses: actions/cache@v4
-        with:
-          path: |
-            android/vendor/bundle
-            ~/.gem
-            ~/.bundle
-            android/.bundle
-          key: ruby-fastlane-${{ runner.os }}-${{ hashFiles('android/Gemfile', 'android/Gemfile.lock') }}-v2
-          restore-keys: |
-            ruby-fastlane-${{ runner.os }}-${{ hashFiles('android/Gemfile') }}-
-            ruby-fastlane-${{ runner.os }}-
       
       - name: Setup Ruby for Fastlane
         uses: ruby/setup-ruby@v1
@@ -589,7 +384,7 @@ jobs:
 
   build-ios:
     name: Build iOS
-    needs: [prepare-and-validate, setup-ios-environment]
+    needs: prepare-and-validate
     if: ${{ needs.prepare-and-validate.outputs.should_build_ios == 'true' }}
     runs-on: macos-15  # Use macOS-15 to support Xcode 16.4
     permissions:
@@ -603,28 +398,30 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
       
-      # Restore cached dependencies from setup job
-      - name: Restore Flutter Dependencies Cache
-        uses: actions/cache/restore@v4
+      - name: Cache Flutter Dependencies
+        uses: actions/cache@v4
         with:
           path: |
             ~/.pub-cache
             ~/Library/Caches/dart-pub
             .dart_tool
-          key: ${{ needs.setup-ios-environment.outputs.flutter-cache-key }}-ios
-          fail-on-cache-miss: true
+          key: flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml') }}
+          restore-keys: |
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-${{ hashFiles('**/pubspec.lock') }}-
+            flutter-macOS-${{ env.FLUTTER_VERSION }}-
+            flutter-macOS-
       
-      - name: Restore CocoaPods Dependencies Cache
-        uses: actions/cache/restore@v4
+      - name: Cache CocoaPods Dependencies
+        uses: actions/cache@v4
         with:
           path: |
             ios/Pods
             ~/.cocoapods
             ~/Library/Caches/CocoaPods
-            ios/build
-            ios/.symlinks
-          key: ${{ needs.setup-ios-environment.outputs.cocoapods-cache-key }}
-          fail-on-cache-miss: true
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock', 'ios/Runner.xcodeproj/project.pbxproj') }}-v3
+          restore-keys: |
+            cocoapods-${{ runner.os }}-${{ hashFiles('**/Podfile.lock') }}-
+            cocoapods-${{ runner.os }}-
       
       - name: Select Xcode 16.4
         run: |
@@ -638,29 +435,26 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
-          cache: true
+          cache: false
       
       - name: Configure Git for private repos
         run: |
           TOKEN="${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
       
-      # Verify Flutter and CocoaPods dependencies are available
-      - name: Verify dependencies
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      
+      - name: Install CocoaPods dependencies
         run: |
-          if [ ! -d ".dart_tool" ]; then
-            echo "⚠️ Flutter dependencies not found in cache, running pub get..."
-            flutter pub get
+          cd ios
+          if [ ! -d "Pods" ] || [ ! -f "Pods/Manifest.lock" ]; then
+            pod install --repo-update
           else
-            echo "✅ Flutter dependencies restored from cache"
+            pod install
           fi
-          
-          if [ ! -d "ios/Pods" ]; then
-            echo "⚠️ CocoaPods dependencies not found in cache, running pod install..."
-            cd ios && pod install
-          else
-            echo "✅ CocoaPods dependencies restored from cache"
-          fi
+      
+      # iOS Build Steps
       
       - name: Configure Xcode Project for Manual Signing
         run: |
@@ -950,18 +744,6 @@ jobs:
           name: ios-app-${{ needs.prepare-and-validate.outputs.release_tag }}
           path: build/ios/ipa/
       
-      - name: Cache Ruby Dependencies & Fastlane (iOS)
-        uses: actions/cache@v4
-        with:
-          path: |
-            ios/vendor/bundle
-            ~/.gem
-            ~/.bundle
-            ios/.bundle
-          key: ruby-fastlane-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile', 'ios/Gemfile.lock') }}-v2
-          restore-keys: |
-            ruby-fastlane-ios-${{ runner.os }}-${{ hashFiles('ios/Gemfile') }}-
-            ruby-fastlane-ios-${{ runner.os }}-
       
       - name: Setup Ruby for Fastlane (iOS)
         uses: ruby/setup-ruby@v1
