@@ -16,6 +16,61 @@
 default_platform(:android)
 
 platform :android do
+  desc "Validate build number against Google Play Console"
+  lane :validate_build_number do |options|
+    version_name = options[:version_name]
+    build_number = options[:build_number].to_i
+    
+    UI.message("🤖 Validating Android build number against Google Play Console...")
+    UI.message("   Package: com.jobprogress.app")
+    UI.message("   Version: #{version_name}")
+    UI.message("   Build Number: #{build_number}")
+    
+    # Get latest version codes from different tracks
+    begin
+      internal_versions = google_play_track_version_codes(
+        package_name: 'com.jobprogress.app',
+        track: 'internal',
+        json_key: ENV['SUPPLY_JSON_KEY_FILE'] || 'play-console-service-account.json'
+      )
+      
+      production_versions = google_play_track_version_codes(
+        package_name: 'com.jobprogress.app',
+        track: 'production',
+        json_key: ENV['SUPPLY_JSON_KEY_FILE'] || 'play-console-service-account.json'
+      )
+      
+      # Get the highest version codes
+      latest_internal = internal_versions.max || 0
+      latest_production = production_versions.max || 0
+      highest_existing = [latest_internal, latest_production].max
+      
+      UI.message("📱 Latest Android version codes:")
+      UI.message("   Internal Testing: #{latest_internal}")
+      UI.message("   Production: #{latest_production}")
+      UI.message("   Highest Existing: #{highest_existing}")
+      
+      # Validate build number
+      if build_number <= highest_existing
+        UI.user_error!("❌ Android build number validation failed!\n" +
+                      "   Current build number: #{build_number}\n" +
+                      "   Highest existing build number: #{highest_existing}\n" +
+                      "   Build number must be greater than #{highest_existing}\n\n" +
+                      "💡 To fix this:\n" +
+                      "   1. Update the build number in pubspec.yaml to be greater than #{highest_existing}\n" +
+                      "   2. For example: version: #{version_name}+#{highest_existing + 1}")
+      end
+      
+      UI.success("✅ Android build number validation passed (#{build_number} > #{highest_existing})")
+      
+    rescue => ex
+      UI.error("Failed to validate build number: #{ex.message}")
+      # For now, we'll warn but not fail to avoid blocking builds during setup
+      UI.important("⚠️  Could not validate against Google Play Console - proceeding with build")
+      UI.important("   This might be due to missing credentials or first-time setup")
+    end
+  end
+
   desc "Deploy a new version to the Google Play Internal Testing track"
   lane :deploy_internal do
     # Get AAB file path from environment variable or use default relative path

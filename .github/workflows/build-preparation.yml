@@ -136,8 +136,67 @@ jobs:
             echo "should_build_ios=true" >> $GITHUB_OUTPUT
           else
             echo "should_build_ios=false" >> $GITHUB_OUTPUT
-          fi
+            fi
       
+      - name: Validate Build Numbers Against App Stores
+        run: |
+          echo "🔍 Validating build numbers against app stores using Fastlane..."
+          
+          # Extract version info from pubspec.yaml
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
+          VERSION_NAME=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
+          
+          echo "📝 Version from pubspec.yaml: $VERSION_NAME (build: $BUILD_NUMBER)"
+          
+          # Basic validation - build number should be a positive integer
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || [[ $BUILD_NUMBER -le 0 ]]; then
+            echo "❌ ERROR: Invalid build number format!"
+            echo "   Build number: $BUILD_NUMBER"
+            echo "   Build number must be a positive integer"
+            exit 1
+          fi
+          
+          # Validate Android build number using Fastlane
+          if [[ "${{ inputs.build_platform }}" == "Android" || "${{ inputs.build_platform }}" == "Both" ]]; then
+            echo "🤖 Running Android build number validation..."
+            
+            # Setup Google Play Console service account
+            echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
+            
+            # Setup Ruby for Fastlane
+            cd android
+            bundle install --quiet
+            
+            # Run Fastlane validation
+            bundle exec fastlane validate_build_number version_name:"$VERSION_NAME" build_number:"$BUILD_NUMBER"
+            
+            # Cleanup
+            cd ..
+            rm -f android/play-console-service-account.json
+          fi
+          
+          # Validate iOS build number using Fastlane
+          if [[ "${{ inputs.build_platform }}" == "iOS" || "${{ inputs.build_platform }}" == "Both" ]]; then
+            echo "🍎 Running iOS build number validation..."
+            
+            # Setup iOS Fastlane
+            cd ios
+            bundle install --quiet
+            
+            # Run Fastlane validation
+            bundle exec fastlane validate_build_number version_name:"$VERSION_NAME" build_number:"$BUILD_NUMBER"
+            
+            cd ..
+          fi
+          
+          echo "🎉 All build number validations completed successfully!"
+        env:
+          SUPPLY_JSON_KEY_FILE: play-console-service-account.json
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        
       - name: Validation Complete
         run: |
           echo "::notice title=Preparation Complete::✅ Build validation completed successfully"

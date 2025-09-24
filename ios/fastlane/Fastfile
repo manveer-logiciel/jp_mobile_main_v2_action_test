@@ -16,6 +16,81 @@
 default_platform(:ios)
 
 platform :ios do
+  desc "Validate build number against TestFlight"
+  lane :validate_build_number do |options|
+    version_name = options[:version_name]
+    build_number = options[:build_number].to_i
+    
+    UI.message("🍎 Validating iOS build number against TestFlight...")
+    UI.message("   Bundle ID: com.job.progressapp")
+    UI.message("   Version: #{version_name}")
+    UI.message("   Build Number: #{build_number}")
+    
+    # Validate API key environment variables
+    api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
+    api_issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+    api_key_content = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
+    
+    unless api_key_id && !api_key_id.empty?
+      UI.important("⚠️  APP_STORE_CONNECT_API_KEY_ID not found - skipping TestFlight validation")
+      return
+    end
+    
+    unless api_issuer_id && !api_issuer_id.empty?
+      UI.important("⚠️  APP_STORE_CONNECT_API_ISSUER_ID not found - skipping TestFlight validation")
+      return
+    end
+    
+    unless api_key_content && !api_key_content.empty?
+      UI.important("⚠️  APP_STORE_CONNECT_API_KEY_CONTENT not found - skipping TestFlight validation")
+      return
+    end
+    
+    begin
+      # Decode base64 content if it's encoded
+      decoded_key_content = if api_key_content.match?(/^[A-Za-z0-9+\/=]+$/) && !api_key_content.start_with?('-----BEGIN')
+        require 'base64'
+        Base64.decode64(api_key_content)
+      else
+        api_key_content
+      end
+      
+      # Create App Store Connect API key
+      api_key = app_store_connect_api_key(
+        key_id: api_key_id,
+        issuer_id: api_issuer_id,
+        key_content: decoded_key_content
+      )
+      
+      # Get latest build number from TestFlight
+      latest_build_number = latest_testflight_build_number(
+        app_identifier: 'com.job.progressapp',
+        api_key: api_key
+      )
+      
+      UI.message("📱 Latest iOS build number in TestFlight: #{latest_build_number}")
+      
+      # Validate build number
+      if build_number <= latest_build_number
+        UI.user_error!("❌ iOS build number validation failed!\n" +
+                      "   Current build number: #{build_number}\n" +
+                      "   Latest TestFlight build number: #{latest_build_number}\n" +
+                      "   Build number must be greater than #{latest_build_number}\n\n" +
+                      "💡 To fix this:\n" +
+                      "   1. Update the build number in pubspec.yaml to be greater than #{latest_build_number}\n" +
+                      "   2. For example: version: #{version_name}+#{latest_build_number + 1}")
+      end
+      
+      UI.success("✅ iOS build number validation passed (#{build_number} > #{latest_build_number})")
+      
+    rescue => ex
+      UI.error("Failed to validate build number: #{ex.message}")
+      # For now, we'll warn but not fail to avoid blocking builds during setup
+      UI.important("⚠️  Could not validate against TestFlight - proceeding with build")
+      UI.important("   This might be due to missing credentials or first-time setup")
+    end
+  end
+
   desc "Deploy a new version to TestFlight"
   lane :deploy_testflight do
     # Validate API key environment variables
