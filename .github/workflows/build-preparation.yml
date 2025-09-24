@@ -669,7 +669,7 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
       
-      - name: Configure Xcode Project for Manual Signing & Provisioning Profiles
+      - name: Configure Xcode Project for Manual Signing
         run: |
           echo "🔧 Configuring Xcode project for manual signing..."
           
@@ -707,115 +707,6 @@ jobs:
           safe_pbxproj_set "E2B11C5728B6384500902FF7" "CODE_SIGN_IDENTITY" "Apple Distribution"
           
           echo "✅ Xcode project configured for manual signing (both main app and Share Extension)"
-      
-      - name: Configure Provisioning Profile UUIDs and ExportOptions
-        env:
-          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-          IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
-          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
-        run: |
-          echo "🔧 Setting provisioning profile UUIDs and updating ExportOptions..."
-          
-          # Recreate signing artifacts for this job
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          MAIN_PROFILE_PATH=$RUNNER_TEMP/main_app.mobileprovision
-          SHARE_PROFILE_PATH=$RUNNER_TEMP/share_extension.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          
-          # Import certificate and provisioning profiles from secrets
-          echo -n "$IOS_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          echo -n "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $MAIN_PROFILE_PATH
-          echo -n "$IOS_SHARE_EXTENSION_PROVISIONING_PROFILE_BASE64" | base64 --decode -o $SHARE_PROFILE_PATH
-          
-          # Create temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          # Import certificate to keychain
-          security import $CERTIFICATE_PATH -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-          
-          # Extract profile information
-          MAIN_PROFILE_UUID=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          SHARE_PROFILE_UUID=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract UUID xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "UUID" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          MAIN_PROFILE_NAME=$(security cms -D -i $MAIN_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          SHARE_PROFILE_NAME=$(security cms -D -i $SHARE_PROFILE_PATH | plutil -extract Name xml1 -o - -- - | xmllint --xpath "//string/text()" - 2>/dev/null || security cms -D -i $SHARE_PROFILE_PATH | grep -A1 "Name" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          
-          # Validate extracted values
-          if [[ -z "$MAIN_PROFILE_UUID" ]] || [[ -z "$MAIN_PROFILE_NAME" ]] || [[ -z "$SHARE_PROFILE_UUID" ]] || [[ -z "$SHARE_PROFILE_NAME" ]]; then
-            echo "❌ ERROR: Failed to extract provisioning profile information"
-            echo "Main profile UUID: '$MAIN_PROFILE_UUID'"
-            echo "Share profile UUID: '$SHARE_PROFILE_UUID'"
-            exit 1
-          fi
-          
-          echo "📋 Setting Main app profile UUID: $MAIN_PROFILE_UUID"
-          echo "📋 Setting Share extension profile UUID: $SHARE_PROFILE_UUID"
-          
-          # Function to safely set plist value (add if doesn't exist, set if exists)
-          safe_pbxproj_set() {
-            local target_id="$1"
-            local key="$2"
-            local value="$3"
-            
-            if /usr/libexec/PlistBuddy -c "Print :objects:$target_id:buildSettings:$key" ios/Runner.xcodeproj/project.pbxproj >/dev/null 2>&1; then
-              /usr/libexec/PlistBuddy -c "Set :objects:$target_id:buildSettings:$key $value" ios/Runner.xcodeproj/project.pbxproj
-            else
-              /usr/libexec/PlistBuddy -c "Add :objects:$target_id:buildSettings:$key string $value" ios/Runner.xcodeproj/project.pbxproj
-            fi
-          }
-          
-          # Set provisioning profile UUIDs for main app (Runner target) - Debug, Release, Profile
-          echo "📱 Setting main app provisioning profile UUIDs..."
-          safe_pbxproj_set "97C147061CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
-          safe_pbxproj_set "97C147071CF9000F007C117D" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
-          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "PROVISIONING_PROFILE_SPECIFIER" "$MAIN_PROFILE_UUID"
-          
-          # Set development team for main app
-          safe_pbxproj_set "97C147061CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
-          safe_pbxproj_set "97C147071CF9000F007C117D" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
-          safe_pbxproj_set "249021D4217E4FDB00AE95B9" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
-          
-          # Set provisioning profile UUIDs for Share Extension target - Debug, Release, Profile
-          echo "📱 Setting Share Extension provisioning profile UUIDs..."
-          safe_pbxproj_set "E2B11C5528B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
-          safe_pbxproj_set "E2B11C5628B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
-          safe_pbxproj_set "E2B11C5728B6384500902FF7" "PROVISIONING_PROFILE_SPECIFIER" "$SHARE_PROFILE_UUID"
-          
-          # Set development team for Share Extension
-          safe_pbxproj_set "E2B11C5528B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
-          safe_pbxproj_set "E2B11C5628B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
-          safe_pbxproj_set "E2B11C5728B6384500902FF7" "DEVELOPMENT_TEAM" "${{ secrets.APPLE_TEAM_ID }}"
-          
-          # Update ExportOptions.plist
-          cp ios/ExportOptions.plist ios/ExportOptions.plist.backup
-          
-          # Function to safely update plist values
-          safe_plist_update() {
-            local key="$1"
-            local value="$2"
-            if ! /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:$key \"$value\"" ios/ExportOptions.plist 2>/dev/null; then
-              /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$key string \"$value\"" ios/ExportOptions.plist 2>/dev/null || return 1
-            fi
-          }
-          
-          # Update provisioning profiles in ExportOptions.plist
-          safe_plist_update "${{ secrets.IOS_BUNDLE_ID }}" "$MAIN_PROFILE_NAME"
-          safe_plist_update "${{ secrets.IOS_SHARE_EXTENSION_BUNDLE_ID }}" "$SHARE_PROFILE_NAME"
-          
-          # Basic bundle ID validation
-          MAIN_BUNDLE_ID_FULL=$(security cms -D -i $MAIN_PROFILE_PATH | grep -A1 "application-identifier" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | head -1)
-          MAIN_BUNDLE_ID=$(echo "$MAIN_BUNDLE_ID_FULL" | sed 's/^[^.]*\.//')
-          
-          if [[ "$MAIN_BUNDLE_ID" != "${{ secrets.IOS_BUNDLE_ID }}" ]]; then
-            echo "❌ ERROR: Bundle ID mismatch. Expected: ${{ secrets.IOS_BUNDLE_ID }}, Found: $MAIN_BUNDLE_ID"
-            exit 1
-          fi
-          
-          echo "✅ Provisioning profile UUIDs configured for both main app and Share Extension"
       
       - name: Update iOS Version
         run: |
@@ -882,11 +773,6 @@ jobs:
           name: ios-app-${{ needs.validate-inputs.outputs.release_tag }}
           path: build/ios/ipa/*.ipa
           retention-days: 30
-      
-      - name: Cleanup Keychain
-        if: always()
-        run: |
-          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
 
   ios-deploy:
     name: 🚀 iOS TestFlight Deployment
