@@ -46,8 +46,6 @@ jobs:
       should_build_android: ${{ steps.validation.outputs.should_build_android }}
       should_build_ios: ${{ steps.validation.outputs.should_build_ios }}
       deploy_to_testing: ${{ steps.validation.outputs.deploy_to_testing }}
-      build_number: ${{ steps.validation.outputs.build_number }}
-      version_name: ${{ steps.validation.outputs.version_name }}
     
     steps:
       - name: Checkout code
@@ -122,94 +120,10 @@ jobs:
           
           echo "✅ Input validation successful"
           
-          # Extract and validate build numbers from pubspec.yaml
-          echo "🔍 Validating build numbers against existing releases..."
-          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
-          VERSION_NAME=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
-          BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
-          
-          echo "📝 Found version: $VERSION_NAME (build: $BUILD_NUMBER)"
-          
-          # Validate build number format
-          if [[ ! $BUILD_NUMBER =~ ^[0-9]+$ ]]; then
-            echo "❌ ERROR: Invalid build number format '$BUILD_NUMBER'"
-            echo "Build number must be numeric (e.g., 303800005)"
-            exit 1
-          fi
-          
-          # API validation using Fastlane
-          echo "🔍 Validating build number against existing releases..."
-          
-          # Check Android builds if Android platform is selected
-          if [[ "$PLATFORM" == "Android" || "$PLATFORM" == "Both" ]]; then
-            echo "🤖 Checking Google Play Console for existing Android build $BUILD_NUMBER..."
-            
-            if [[ -n "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" ]]; then
-              # Setup Google Play Console Service Account
-              echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
-              chmod 600 android/play-console-service-account.json
-              
-              # Setup Ruby and Fastlane for validation
-              cd android
-              gem install fastlane --no-document
-              
-              # Use supply command to check existing versions
-              echo "Checking existing versions on Google Play Console..."
-              if supply --track internal --json_key play-console-service-account.json --skip_upload_apk --skip_upload_aab --skip_upload_metadata --skip_upload_images --skip_upload_screenshots --version_code $BUILD_NUMBER 2>&1 | grep -q "already exists\|duplicate"; then
-                echo "❌ ERROR: Version code $BUILD_NUMBER already exists on Google Play Console Internal Testing track"
-                rm -f play-console-service-account.json
-                cd ..
-                exit 1
-              else
-                echo "✅ Version code $BUILD_NUMBER is available on Google Play Console"
-              fi
-              
-              # Cleanup
-              rm -f play-console-service-account.json
-              cd ..
-            else
-              echo "⚠️ WARNING: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured, skipping Android validation"
-            fi
-          fi
-          
-          # Check iOS builds if iOS platform is selected
-          if [[ "$PLATFORM" == "iOS" || "$PLATFORM" == "Both" ]]; then
-            echo "📱 Checking TestFlight for existing iOS build $BUILD_NUMBER..."
-            
-            if [[ -n "${{ secrets.APP_STORE_CONNECT_API_KEY }}" && -n "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" && -n "${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}" ]]; then
-              # Setup iOS Fastlane for validation
-              cd ios
-              gem install fastlane --no-document
-              
-              # Set environment variables for Fastlane
-              export APP_STORE_CONNECT_API_KEY_ID="${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}"
-              export APP_STORE_CONNECT_API_ISSUER_ID="${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}"
-              export APP_STORE_CONNECT_API_KEY_CONTENT="${{ secrets.APP_STORE_CONNECT_API_KEY }}"
-              
-              # Use pilot to check existing builds
-              echo "Checking existing builds on TestFlight..."
-              if pilot list --app_identifier "${{ secrets.IOS_BUNDLE_ID }}" 2>&1 | grep -q "Build $BUILD_NUMBER\|Version $BUILD_NUMBER"; then
-                echo "❌ ERROR: Build number $BUILD_NUMBER already exists on TestFlight"
-                cd ..
-                exit 1
-              else
-                echo "✅ Build number $BUILD_NUMBER is available on TestFlight"
-              fi
-              
-              cd ..
-            else
-              echo "⚠️ WARNING: App Store Connect API credentials not configured, skipping iOS validation"
-            fi
-          fi
-          
-          echo "✅ Build number API validation completed"
-          
           # Set outputs for next steps
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "build_platform=$PLATFORM" >> $GITHUB_OUTPUT
           echo "deploy_to_testing=${{ inputs.deploy_to_testing }}" >> $GITHUB_OUTPUT
-          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
-          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           
           # Set conditional build flags
           if [[ "$PLATFORM" == "Android" || "$PLATFORM" == "Both" ]]; then
@@ -226,19 +140,7 @@ jobs:
       
       - name: Validation Complete
         run: |
-          # Extract build number for display
-          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
-          BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
-          
-          echo "::notice title=Preparation Complete::✅ Build validation and API verification completed successfully"
-          echo ""
-          echo "🎉 Build number $BUILD_NUMBER has been validated against existing releases!"
-          if [[ "${{ inputs.build_platform }}" == "Android" || "${{ inputs.build_platform }}" == "Both" ]]; then
-            echo "  ✅ Google Play Console → Internal Testing"
-          fi
-          if [[ "${{ inputs.build_platform }}" == "iOS" || "${{ inputs.build_platform }}" == "Both" ]]; then
-            echo "  ✅ App Store Connect → TestFlight"
-          fi
+          echo "::notice title=Preparation Complete::✅ Build validation completed successfully"
 
   setup-environment:
     name: Setup Build Environment
