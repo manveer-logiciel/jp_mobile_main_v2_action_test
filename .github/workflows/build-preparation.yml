@@ -959,7 +959,7 @@ jobs:
           echo "✅ **iOS app deployed to TestFlight successfully**" >> $GITHUB_STEP_SUMMARY
 
   build-summary:
-    name: Final Build Summary
+    name: Build Report
     needs: [prepare-and-validate, build-android, build-ios, deploy-android, deploy-ios]
     if: always() && needs.prepare-and-validate.result == 'success'
     runs-on: ubuntu-latest
@@ -977,11 +977,11 @@ jobs:
           VERSION_NAME=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
           BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
           
-          echo "## 📦 Release Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# 📦 Release Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Version Information
-          echo "### 📋 Version Details" >> $GITHUB_STEP_SUMMARY
+          # Version Information in compact format
+          echo "## 📋 Version Details" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| **🏷️ Release Tag** | \`${{ needs.prepare-and-validate.outputs.release_tag }}\` |" >> $GITHUB_STEP_SUMMARY
@@ -991,8 +991,8 @@ jobs:
           echo "| **🚀 Deploy to Testing** | \`${{ needs.prepare-and-validate.outputs.deploy_to_testing }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Build Status
-          echo "### 🔨 Build & Deploy Status" >> $GITHUB_STEP_SUMMARY
+          # Build Status - Compact format
+          echo "## 🔨 Build & Deploy Status" >> $GITHUB_STEP_SUMMARY
           echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           
@@ -1046,13 +1046,59 @@ jobs:
           echo "| **📱 iOS Deploy** | $IOS_DEPLOY |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Build Environment Summary
-          echo "### ⚙️ Build Environment" >> $GITHUB_STEP_SUMMARY
+          # Build Environment - Expandable Section
+          echo "## ⚙️ Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>🔍 View Environment Details</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🛠️ Common Environment" >> $GITHUB_STEP_SUMMARY
           echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
           echo "| **Flutter** | \`${{ env.FLUTTER_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Java** | \`${{ env.JAVA_VERSION }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Runner OS** | \`${{ runner.os }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Workflow** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Android Environment Details
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_android }}" == "true" ]]; then
+            echo "### 🤖 Android Environment" >> $GITHUB_STEP_SUMMARY
+            echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Runner OS** | Ubuntu Latest |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Build Tool** | Gradle |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Target SDK** | Latest |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Output** | AAB (App Bundle) |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # iOS Environment Details
+          if [[ "${{ needs.prepare-and-validate.outputs.should_build_ios }}" == "true" ]]; then
+            echo "### 🍎 iOS Environment" >> $GITHUB_STEP_SUMMARY
+            echo "| Component | Version |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Runner OS** | macOS-15 |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Xcode** | 16.4 |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Build Tool** | xcodebuild |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Signing** | Manual (Distribution) |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Output** | IPA |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Performance Metrics - Expandable Section
+          echo "## 📊 Performance Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>⏱️ View Build Performance</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow Run** | [\`#${{ github.run_number }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Triggered** | $(date) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | [${{ github.repository }}](${{ github.server_url }}/${{ github.repository }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | [\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Actor** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
           
           echo "::notice title=Build Summary::📊 Release ${{ needs.prepare-and-validate.outputs.release_tag }} build completed"
