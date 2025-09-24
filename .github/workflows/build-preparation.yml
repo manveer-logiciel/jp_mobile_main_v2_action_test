@@ -118,16 +118,9 @@ jobs:
           echo "🔐 Password verified successfully against stored secret"
           echo "✅ Input validation successful"
           
-          # Calculate version code once for reuse with build number for uniqueness
+          # Calculate version code once for reuse
           IFS='.' read -ra VERSION_PARTS <<< "$RELEASE_TAG"
-          BASE_VERSION_CODE="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
-          # Add GitHub run number to ensure uniqueness for TestFlight uploads
-          VERSION_CODE="$((BASE_VERSION_CODE + ${{ github.run_number }}))"
-          
-          echo "📊 Version calculation:"
-          echo "  Base version: $BASE_VERSION_CODE (from $RELEASE_TAG)"
-          echo "  GitHub run number: ${{ github.run_number }}"
-          echo "  Final version code: $VERSION_CODE"
+          VERSION_CODE="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
           
           # Set outputs for next steps
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
