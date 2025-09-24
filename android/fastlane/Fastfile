@@ -63,11 +63,14 @@ platform :android do
       
       UI.success("✅ Android build number validation passed (#{build_number} > #{highest_existing})")
       
+    rescue FastlaneCore::Interface::FastlaneError => ex
+      # Re-raise validation errors to fail the workflow
+      raise ex
     rescue => ex
       UI.error("Failed to validate build number: #{ex.message}")
-      # For now, we'll warn but not fail to avoid blocking builds during setup
-      UI.important("⚠️  Could not validate against Google Play Console - proceeding with build")
-      UI.important("   This might be due to missing credentials or first-time setup")
+      UI.user_error!("❌ Could not validate against Google Play Console - failing build\n" +
+                    "   This might be due to missing credentials or configuration issues\n" +
+                    "   Error: #{ex.message}")
     end
   end
 

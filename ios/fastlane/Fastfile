@@ -83,11 +83,14 @@ platform :ios do
       
       UI.success("✅ iOS build number validation passed (#{build_number} > #{latest_build_number})")
       
+    rescue FastlaneCore::Interface::FastlaneError => ex
+      # Re-raise validation errors to fail the workflow
+      raise ex
     rescue => ex
       UI.error("Failed to validate build number: #{ex.message}")
-      # For now, we'll warn but not fail to avoid blocking builds during setup
-      UI.important("⚠️  Could not validate against TestFlight - proceeding with build")
-      UI.important("   This might be due to missing credentials or first-time setup")
+      UI.user_error!("❌ Could not validate against TestFlight - failing build\n" +
+                    "   This might be due to missing credentials or configuration issues\n" +
+                    "   Error: #{ex.message}")
     end
   end
 
