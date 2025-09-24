@@ -342,13 +342,6 @@ jobs:
               echo "✅ APPLE_TEAM_ID is set"
             fi
             
-            if [[ -z "${{ secrets.APPLE_ID }}" ]]; then
-              echo "❌ ERROR: APPLE_ID is missing"
-              VALIDATION_FAILED=true
-            else
-              echo "✅ APPLE_ID is set"
-            fi
-            
             if [[ -z "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" ]]; then
               echo "❌ ERROR: APP_STORE_CONNECT_API_KEY_ID is missing"
               VALIDATION_FAILED=true
@@ -946,7 +939,6 @@ jobs:
           cd ios
           bundle exec fastlane deploy_testflight
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
