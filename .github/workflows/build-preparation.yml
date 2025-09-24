@@ -160,6 +160,34 @@ jobs:
           
           echo "📝 Version from tag ${{ inputs.release_tag }}: $VERSION_NAME (build: $BUILD_NUMBER)"
           
+          # Validate version synchronization between pubspec.yaml and global.dart
+          echo "🔍 Validating version synchronization..."
+          GLOBAL_DART_VERSION=$(grep "String appVersion = " lib/common/libraries/global.dart | sed -n "s/.*String appVersion = '\([^']*\)'.*/\1/p")
+          
+          if [[ -z "$GLOBAL_DART_VERSION" ]]; then
+            echo "❌ ERROR: Could not extract appVersion from lib/common/libraries/global.dart"
+            echo "   Expected format: String appVersion = 'x.y.z';"
+            exit 1
+          fi
+          
+          echo "📝 pubspec.yaml version: $VERSION_NAME"
+          echo "📝 global.dart appVersion: $GLOBAL_DART_VERSION"
+          
+          if [[ "$VERSION_NAME" != "$GLOBAL_DART_VERSION" ]]; then
+            echo "❌ ERROR: Version mismatch between pubspec.yaml and global.dart!"
+            echo "   pubspec.yaml version: '$VERSION_NAME'"
+            echo "   global.dart appVersion: '$GLOBAL_DART_VERSION'"
+            echo ""
+            echo "🔧 To fix this issue:"
+            echo "   1. Update lib/common/libraries/global.dart:"
+            echo "      String appVersion = '$VERSION_NAME';"
+            echo "   2. Or update pubspec.yaml version to match global.dart"
+            echo "   3. Commit the changes and update your release tag"
+            exit 1
+          fi
+          
+          echo "✅ Version synchronization validated successfully"
+          
           # Set version outputs
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
