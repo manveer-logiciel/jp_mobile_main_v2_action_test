@@ -138,16 +138,25 @@ jobs:
             echo "should_build_ios=false" >> $GITHUB_OUTPUT
             fi
       
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: false
+      
       - name: Validate Build Numbers Against App Stores
         run: |
           echo "🔍 Validating build numbers against app stores using Fastlane..."
           
-          # Extract version info from pubspec.yaml
+          # Checkout the specific tag to get its version
+          git checkout ${{ inputs.release_tag }}
+          
+          # Extract version info from pubspec.yaml at the tagged version
           PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
           VERSION_NAME=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
           BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
           
-          echo "📝 Version from pubspec.yaml: $VERSION_NAME (build: $BUILD_NUMBER)"
+          echo "📝 Version from tag ${{ inputs.release_tag }}: $VERSION_NAME (build: $BUILD_NUMBER)"
           
           # Basic validation - build number should be a positive integer
           if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || [[ $BUILD_NUMBER -le 0 ]]; then
@@ -164,7 +173,7 @@ jobs:
             # Setup Google Play Console service account
             echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
             
-            # Setup Ruby for Fastlane
+            # Setup Android Fastlane dependencies
             cd android
             bundle install --quiet
             
@@ -180,7 +189,7 @@ jobs:
           if [[ "${{ inputs.build_platform }}" == "iOS" || "${{ inputs.build_platform }}" == "Both" ]]; then
             echo "🍎 Running iOS build number validation..."
             
-            # Setup iOS Fastlane
+            # Setup iOS Fastlane dependencies
             cd ios
             bundle install --quiet
             
