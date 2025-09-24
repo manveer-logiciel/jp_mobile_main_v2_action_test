@@ -414,13 +414,12 @@ jobs:
           storeFile=../keystore.jks
           EOF
           
-          # Extract version info from release tag
-          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
-          VERSION_NAME="$RELEASE_TAG"  # Use release tag directly
+          # Extract version info from pubspec.yaml (e.g., 3.38.0+303800005)
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
+          VERSION_NAME=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
+          VERSION_CODE=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
           
-          # Convert version to build number (e.g., 3.37.2 -> 303700200)
-          IFS='.' read -ra VERSION_PARTS <<< "$VERSION_NAME"
-          VERSION_CODE="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
+          echo "📝 Using Android version: $VERSION_NAME (code: $VERSION_CODE)"
           
           # Update local.properties
           cat > android/local.properties << EOF
@@ -784,15 +783,12 @@ jobs:
       
       - name: Update iOS Version
         run: |
-          # Extract version info from release tag
-          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
-          VERSION="$RELEASE_TAG"  # Use release tag directly
+          # Extract version info from pubspec.yaml (e.g., 3.38.0+303800005)
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
+          VERSION=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
           
-          # Convert version to build number (e.g., 3.37.2 -> 303700200)
-          IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
-          BUILD_NUMBER="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
-          
-          echo "📝 Updating iOS version to $VERSION ($BUILD_NUMBER)"
+          echo "📝 Using iOS version: $VERSION (build: $BUILD_NUMBER)"
           
           # Function to safely set plist value (add if doesn't exist, set if exists)
           safe_plist_set() {
@@ -821,14 +817,12 @@ jobs:
       
       - name: Build iOS Archive
         run: |
-          # Extract version info from release tag
-          RELEASE_TAG="${{ needs.prepare-and-validate.outputs.release_tag }}"
-          VERSION="$RELEASE_TAG"  # Use release tag directly
+          # Extract version info from pubspec.yaml (e.g., 3.38.0+303800005)
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
+          VERSION=$(echo $PUBSPEC_VERSION | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo $PUBSPEC_VERSION | cut -d'+' -f2)
           
-          # Convert version to build number (e.g., 3.37.2 -> 303700200)
-          IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
-          BUILD_NUMBER="$((${VERSION_PARTS[0]} * 10000000 + ${VERSION_PARTS[1]} * 100000 + ${VERSION_PARTS[2]} * 1000))"
-          
+          echo "📝 Building iOS with version: $VERSION (build: $BUILD_NUMBER)"
           echo "::notice title=iOS Build::🏗️ Building iOS archive (.ipa)..."
           flutter build ipa --release \
             --export-options-plist=ios/ExportOptions.plist \
