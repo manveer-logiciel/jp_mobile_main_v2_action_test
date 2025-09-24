@@ -178,7 +178,7 @@ jobs:
             bundle install --quiet
             
             # Run Fastlane validation
-            bundle exec fastlane validate_build_number version_name:"$VERSION_NAME" build_number:"$BUILD_NUMBER"
+            bundle exec fastlane android validate_build_number version_name:"$VERSION_NAME" build_number:"$BUILD_NUMBER"
             
             # Cleanup
             cd ..
@@ -194,7 +194,7 @@ jobs:
             bundle install --quiet
             
             # Run Fastlane validation
-            bundle exec fastlane validate_build_number version_name:"$VERSION_NAME" build_number:"$BUILD_NUMBER"
+            bundle exec fastlane ios validate_build_number version_name:"$VERSION_NAME" build_number:"$BUILD_NUMBER"
             
             cd ..
           fi
