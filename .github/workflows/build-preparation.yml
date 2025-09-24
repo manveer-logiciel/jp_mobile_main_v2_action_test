@@ -160,12 +160,9 @@ jobs:
               cd android
               gem install fastlane --no-document
               
-              # Check existing versions using supply command with validation
+              # Use supply command to check existing versions
               echo "Checking existing versions on Google Play Console..."
-              
-              # Try to upload with dry-run to check if version exists
-              # This will fail if the version already exists
-              if supply --track internal --json_key play-console-service-account.json --skip_upload_apk --skip_upload_aab --skip_upload_metadata --skip_upload_images --skip_upload_screenshots --validate_only --version_code $BUILD_NUMBER 2>&1 | grep -i "version.*already.*exists\|duplicate.*version\|version.*conflict"; then
+              if supply --track internal --json_key play-console-service-account.json --skip_upload_apk --skip_upload_aab --skip_upload_metadata --skip_upload_images --skip_upload_screenshots --version_code $BUILD_NUMBER 2>&1 | grep -q "already exists\|duplicate"; then
                 echo "❌ ERROR: Version code $BUILD_NUMBER already exists on Google Play Console Internal Testing track"
                 rm -f play-console-service-account.json
                 cd ..
@@ -196,14 +193,9 @@ jobs:
               export APP_STORE_CONNECT_API_ISSUER_ID="${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}"
               export APP_STORE_CONNECT_API_KEY_CONTENT="${{ secrets.APP_STORE_CONNECT_API_KEY }}"
               
-              # Check existing builds using pilot command
+              # Use pilot to check existing builds
               echo "Checking existing builds on TestFlight..."
-              
-              # Get list of builds and check if our build number exists
-              BUILDS_OUTPUT=$(pilot list --app_identifier "${{ secrets.IOS_BUNDLE_ID }}" 2>&1 || echo "No builds found")
-              
-              # Check if build number exists in the output
-              if echo "$BUILDS_OUTPUT" | grep -q "Build $BUILD_NUMBER\|Version $BUILD_NUMBER\|$BUILD_NUMBER"; then
+              if pilot list --app_identifier "${{ secrets.IOS_BUNDLE_ID }}" 2>&1 | grep -q "Build $BUILD_NUMBER\|Version $BUILD_NUMBER"; then
                 echo "❌ ERROR: Build number $BUILD_NUMBER already exists on TestFlight"
                 cd ..
                 exit 1
