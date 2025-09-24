@@ -55,6 +55,13 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0  # Fetch all history and tags
+          ref: ${{ inputs.release_tag }}  # Checkout the specific release tag
+      
+      - name: Setup Ruby for Fastlane validation
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: false
       
       - name: Validate Inputs & Set Outputs
         id: validation
@@ -149,7 +156,7 @@ jobs:
               echo "${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}" | base64 --decode > android/play-console-service-account.json
               chmod 600 android/play-console-service-account.json
               
-              # Setup Ruby and Fastlane for validation
+              # Setup Fastlane for validation
               cd android
               gem install fastlane --no-document
               
@@ -177,7 +184,7 @@ jobs:
             echo "📱 Checking TestFlight for existing iOS build $BUILD_NUMBER..."
             
             if [[ -n "${{ secrets.APP_STORE_CONNECT_API_KEY }}" && -n "${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}" && -n "${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}" ]]; then
-              # Setup iOS Fastlane for validation
+              # Setup Fastlane for validation
               cd ios
               gem install fastlane --no-document
               
@@ -256,7 +263,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: main
+          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
       
       - name: Generate Cache Keys
         id: cache-keys
@@ -345,7 +352,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: main
+          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
       
       - name: Generate Cache Keys
         id: cache-keys
@@ -439,7 +446,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: main
+          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
       
       # Restore cached dependencies from setup job
       - name: Setup Java
@@ -581,7 +588,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: main
+          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
       
       - name: Download App Bundle Artifact
         uses: actions/download-artifact@v4
@@ -642,7 +649,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: main
+          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
       
       # Restore cached dependencies from setup job
       - name: Restore Flutter Dependencies Cache
@@ -1009,7 +1016,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          ref: main
+          ref: ${{ needs.prepare-and-validate.outputs.release_tag }}
       
       - name: Download iOS App Artifact
         uses: actions/download-artifact@v4
